@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Khepri Chess Browser Play</title>
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500&display=swap" rel="stylesheet"> 
+   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/normalize.css@8.0.1/normalize.css">
+   <link rel="stylesheet"
+      href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css"
+      integrity="sha384-q94+BZtLrkL1/ohfjR8c6L+A6qzNH9R2hBLwyoAfu3i/WCvQjzL2RQJ3uNHDISdU"
+      crossorigin="anonymous">
+   <script src="https://cdn.jsdelivr.net/npm/chess.js@0.12.0/chess.min.js"></script>
+   <script src="https://code.jquery.com/jquery-3.5.1.min.js"
+      integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2"
+      crossorigin="anonymous"></script>
+   <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"
+      integrity="sha384-8Vi8VHwn3vjQ9eUHUxex3JSN/NFqUg3QbPyX8kWyb93+8AC/pPWTzj+nHtbC5bxD"
+      crossorigin="anonymous"></script>
+   <script src="kheprichess.js"></script>
+   <style>
+      html, body {
+         height: 100%;
+         background-color: #f7f7f7;
+      }
+
+      #container {
+         font-family: 'Quicksand';
+         display: flex;
+         flex-direction: column;
+         align-items: center;
+      }
+
+      #info {
+         margin-top: 1rem;
+         width: 400px;
+      }
+
+      #fen {
+         width: 100%;
+         padding: 0.3rem 0.5rem;
+         box-sizing: border-box;
+      }
+
+      p {
+         border-bottom: 1px solid #aeaeae;
+         padding-bottom: 0.4rem;
+         margin-bottom: 0.5rem;
+      }
+   </style>
+</head>
+<body>
+   <div id="container">
+      <h1>Khepri Chess</h1>
+      <div id="chessboard" style="width: 400px"></div>
+      <div id="info">
+         <p>FEN:</p>
+         <input type="text" id="fen" readonly>
+         <p>PGN:</p>
+         <div id="pgn"></div>
+      </div>
+   </div>   
+   <script>
+      const moves = [];
+
+      function onDragStart(source, piece, position, orientation) {
+         // do not pick up pieces if the game is over
+         if (game.game_over()) return false;
+
+         // only pick up pieces for White
+         if (piece.search(/^b/) !== -1) return false;
+      }
+
+      function onDrop(source, target) {
+         // see if the move is legal
+         var move = game.move({
+            from: source,
+            to: target,
+            promotion: 'q' // NOTE: always promote to a queen for example simplicity
+         });
+
+         // illegal move
+         if (move === null) return 'snapback';
+
+         const moveValue = source + target;
+         moves.push(moveValue);
+
+         setTimeout(makeEngineMove, 100);
+         updateInfo();
+      }
+
+      // update the board position after the piece snap
+      // for castling, en passant, pawn promotion
+      function onSnapEnd() {
+         board.position(game.fen())
+      }
+
+      function makeEngineMove() {
+         engine.ParseUCIPosition(`position startpos moves ${moves.join(' ')}`);
+         const engineMove = engine.ParseUCIGo('go movetime 3000');
+         moves.push(engineMove);
+         game.move(engineMove, { sloppy: true });
+         board.position(game.fen());
+         updateInfo();
+      }
+
+      function updateInfo() {
+         document.getElementById("fen").value = game.fen();
+         document.getElementById("pgn").innerHTML = game.pgn();
+      }
+
+      const board = Chessboard('chessboard', {
+         position: 'start',
+         draggable: true,
+         onDragStart,
+         onDrop,
+         onSnapEnd
+      });
+
+      const engine = new Engine();
+      const game = new Chess();
+      updateInfo();
+   </script>
+</body>
+</html>
