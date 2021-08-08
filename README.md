@@ -114,6 +114,10 @@ Run a perft test on the current position (warning, high depth values can be slow
 engine.Perft(5);
 ```
 
+## Improvements/To Do
+
+A generalized list of things that I'd like to do can be found [here](https://github.com/kurt1288/KhepriChess/wiki/Improvements).
+
 ## Special Thanks
 
 A huge thanks to Maksim Korzh, aka Code Monkey King, and his [video tutorial series](https://www.youtube.com/playlist?list=PLmN0neTso3Jxh8ZIylk74JpwfiWNI76Cs) on bitboards. Without it, I never would have gotten anywhere.
