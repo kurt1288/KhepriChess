@@ -27,9 +27,9 @@ Files for both browser and UCI usage can be found in the dist directory.
       * In Arena, the command line should be the path to the nodejs executable. In the "Command Line Parameters" field, specify the path to the `kheprichessuci.js` file.
       * In Cute Chess, the command field should look something like `<Nodejs directory>\node.exe "<Khepri directory>\kheprichessuci.js"`
 
-## Use in the browser
+## A note about browser use
 
-Please note that this is an engine and works through the UCI protocol and its general design priciple. What this means is that there is no exposed move validation, piece placement, check detection, etc. like you would find in the [chess.js](https://github.com/jhlywa/chess.js) (which does those things, but doesn't have the AI part) library. As such, the engine will attempt to make any move you tell it to, even an invalid one.
+Please note that this engine works with the UCI protocol and its general design priciple. What this means is that there is no exposed move validation, piece placement, check detection, etc. like you would find in the [chess.js](https://github.com/jhlywa/chess.js) library (which does those things, but doesn't have the AI part). As such, the engine will attempt to make any move you tell it to, even an invalid one.
 
 For an example of integrating KhepriChess with validation from chess.js, please see [the example](https://kurt1288.github.io/KhepriChess/examples/khepri.html).
 
