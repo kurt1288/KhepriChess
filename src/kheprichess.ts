@@ -2254,17 +2254,19 @@ class Engine {
          }
          
          // razoring
-         let rvalue = staticEval + 100;
-         if (rvalue < beta) {
-            if (depth === 1) {
-               let newValue = this.Quiescence(alpha, beta);
-               return Math.max(newValue, rvalue);
-            }
-            rvalue += 200;
-            if (rvalue < beta && depth <= 3) {
-               let newValue = this.Quiescence(alpha, beta);
-               if (newValue < beta) {
+         if (depth < 2) {
+            let rvalue = staticEval + this.pieceValue[GamePhase.Opening][Pieces.P];
+            if (rvalue < beta) {
+               if (depth === 1) {
+                  let newValue = this.Quiescence(alpha, beta);
                   return Math.max(newValue, rvalue);
+               }
+               rvalue += (this.pieceValue[GamePhase.Opening][Pieces.P] * 2);
+               if (rvalue < beta && depth <= 3) {
+                  let newValue = this.Quiescence(alpha, beta);
+                  if (newValue < beta) {
+                     return Math.max(newValue, rvalue);
+                  }
                }
             }
          }
