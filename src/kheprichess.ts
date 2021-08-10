@@ -15,10 +15,6 @@ interface BoardCopy {
    hashKey: bigint
 }
 
-interface Moves {
-   list: number[]
-}
-
 enum GamePhase {
    Opening,
    Endgame,
@@ -701,16 +697,16 @@ class Engine {
    /**
     * Print move list
     */
-   private PrintMoveList(moves: Moves) {
-      if (moves.list.length === 0) {
+   private PrintMoveList(moves: number[]) {
+      if (moves.length === 0) {
          console.log('No moves in move list.');
          return;
       }
 
       const moveList = [];
 
-      for (let moveCount = 0; moveCount < moves.list.length; moveCount++) {
-         const move = moves.list[moveCount];
+      for (let moveCount = 0; moveCount < moves.length; moveCount++) {
+         const move = moves[moveCount];
          moveList.push({ 
             Move: `${SquareToCoords[this.GetMoveSource(move)]}${SquareToCoords[this.GetMoveTarget(move)]}${this.GetMovePromoted(move) ? this.promotedPieces[this.GetMovePromoted(move)] : ' '}`,
             Piece: `${this.unicodePieces[this.GetMovePiece(move)]}`,
@@ -721,16 +717,16 @@ class Engine {
          });
       }
       console.table(moveList);
-      console.log(`Total number of moves: ${moves.list.length}`);
+      console.log(`Total number of moves: ${moves.length}`);
    }
 
-   private PrintMoveScores(moves: Moves) {
+   private PrintMoveScores(moves: number[]) {
       const scoreList = [];
 
-      for (let i = 0; i < moves.list.length; i++) {
+      for (let i = 0; i < moves.length; i++) {
          scoreList.push({
-            move: `${SquareToCoords[this.GetMoveSource(moves.list[i])]}${SquareToCoords[this.GetMoveTarget(moves.list[i])]}${this.GetMovePromoted(moves.list[i]) ? this.promotedPieces[this.GetMovePromoted(moves.list[i])] : ' '}`,
-            score: this.ScoreMove(moves.list[i])
+            move: `${SquareToCoords[this.GetMoveSource(moves[i])]}${SquareToCoords[this.GetMoveTarget(moves[i])]}${this.GetMovePromoted(moves[i]) ? this.promotedPieces[this.GetMovePromoted(moves[i])] : ' '}`,
+            score: this.ScoreMove(moves[i])
          });
       }
 
@@ -1249,7 +1245,7 @@ class Engine {
    * <><><><><><><><><><><><><><><><><><>
    */
 
-   private GeneratePawnMoves(side: SideToMove, moves: Moves, bitboard: bigint, capturesOnly: boolean) {
+   private GeneratePawnMoves(side: SideToMove, moves: number[], bitboard: bigint, capturesOnly: boolean) {
       const emptySquares = ~this.occupancies[SideToMove.Both];
       let attacks: bigint;
       let piece = side === SideToMove.White ? Pieces.P : Pieces.p;
@@ -1326,7 +1322,7 @@ class Engine {
    /**
     * Generate all moves
     */
-   private GenerateMoves(moves: Moves, capturesOnly = false) {
+   private GenerateMoves(moves: number[], capturesOnly = false) {
       let bitboard: bigint;
 
       const wpawnBB = this.bitboards[Pieces.P];
@@ -1537,8 +1533,8 @@ class Engine {
    private GetMoveEnPassant(move: number) { return move & 0x400000 }
    private GetMoveCastling(move: number) { return move & 0x800000 }
 
-   private AddMove(moves: Moves, move: number) {
-      moves.list.push(move);
+   private AddMove(moves: number[], move: number) {
+      moves.push(move);
    }
 
    /*
@@ -2272,19 +2268,20 @@ class Engine {
          }
       }
 
-      const moves: Moves = { list: [] };
+      let moves: number[] = [];
       this.GenerateMoves(moves);
 
       if (this.followPv) {
          this.EnabledPVScoring(moves);
       }
 
-      moves.list = this.SortMoves(moves, bestMove);
+      moves = this.SortMoves(moves, bestMove);
 
-      for (let i = 0; i < moves.list.length; i++) {
+      for (let i = 0; i < moves.length; i++) {
          this.ply++;
+         const move = moves[i];
 
-         if (!this.MakeMove(moves.list[i])) {
+         if (!this.MakeMove(move)) {
             this.ply--;
             continue;
          }
@@ -2296,8 +2293,8 @@ class Engine {
             && movesSearched >= 4
             //&& !isPVNode
             && !inCheck
-            && !this.GetMoveCapture(moves.list[i])
-            && !this.GetMovePromoted(moves.list[i])
+            && !this.GetMoveCapture(move)
+            && !this.GetMovePromoted(move)
             ) {
 
             // reduction factor
@@ -2328,16 +2325,16 @@ class Engine {
 
          if (score > alpha) {
             hashFlag = this.hashExact;
-            bestMove = moves.list[i];
+            bestMove = move;
 
-            if (!this.GetMoveCapture(moves.list[i])) {
-               this.historyMoves[this.GetMoveSource(moves.list[i])][this.GetMoveTarget(moves.list[i])] += depth * depth;
+            if (!this.GetMoveCapture(move)) {
+               this.historyMoves[this.GetMoveSource(move)][this.GetMoveTarget(move)] += depth * depth;
             }
 
             alpha = score;
 
             // store the move in the pv table
-            this.pvTable[this.ply][this.ply] = moves.list[i];
+            this.pvTable[this.ply][this.ply] = move;
 
             for (let nextPly = this.ply + 1; nextPly < this.pvLength[this.ply + 1]; nextPly++) {
                this.pvTable[this.ply][nextPly] = this.pvTable[this.ply + 1][nextPly];
@@ -2348,11 +2345,11 @@ class Engine {
 
          if (score >= beta) {
             // update transposition tables
-            this.WriteHash(depth, this.hashBeta, score, moves.list[i]);
+            this.WriteHash(depth, this.hashBeta, score, move);
 
-            if (!this.GetMoveCapture(moves.list[i])) {
+            if (!this.GetMoveCapture(move)) {
                this.killerMoves[1][this.ply] = this.killerMoves[0][this.ply];
-               this.killerMoves[0][this.ply] = moves.list[i];
+               this.killerMoves[0][this.ply] = move;
             }
             
             return beta;
@@ -2398,15 +2395,15 @@ class Engine {
          alpha = standPat;
       }
 
-      const moves: Moves = { list: [] };
+      let moves: number[] = [];
       this.GenerateMoves(moves, true);
 
-      moves.list = this.SortMoves(moves);
+      moves = this.SortMoves(moves);
       
-      for (let i = 0; i < moves.list.length; i++) {
+      for (let i = 0; i < moves.length; i++) {
          this.ply++;
 
-         if (!this.MakeMove(moves.list[i])) {
+         if (!this.MakeMove(moves[i])) {
             this.ply--;
             continue;
          }
@@ -2450,11 +2447,11 @@ class Engine {
       return false;
    }
 
-   private EnabledPVScoring(moves: Moves) {
+   private EnabledPVScoring(moves: number[]) {
       this.followPv = false;
 
-      for (let i = 0; i < moves.list.length; i++) {
-         if (this.pvTable[0][this.ply] === moves.list[i]) {
+      for (let i = 0; i < moves.length; i++) {
+         if (this.pvTable[0][this.ply] === moves[i]) {
             this.scorePv = true;
             this.followPv = true;
          }
@@ -2510,10 +2507,10 @@ class Engine {
       }
    }
 
-   private SortMoves(moves: Moves, bestMove = 0) {
+   private SortMoves(moves: number[], bestMove = 0) {
       // From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort#sorting_with_map
       
-      const mapped = moves.list.map((v, i) => {
+      const mapped = moves.map((v, i) => {
          let value = 0;
          
          if (v === bestMove) {
@@ -2536,7 +2533,7 @@ class Engine {
          return 0;
       });
 
-      return mapped.map(v => moves.list[v.i]);
+      return mapped.map(v => moves[v.i]);
    }
 
    /*
@@ -2549,17 +2546,19 @@ class Engine {
 
    Perft(depth: number) {
       const start = Date.now();
-      const moves: Moves = { list: [] };
+      const moves: number[] = [];
 
       this.GenerateMoves(moves);
 
-      for (let count = 0; count < moves.list.length; count++) {      
-         if (!this.MakeMove(moves.list[count])) {
+      for (let count = 0; count < moves.length; count++) {    
+         const move = moves[count];
+
+         if (!this.MakeMove(move)) {
             continue;
          }
 
          let nodes = this.PerftDriver(depth - 1);
-         console.log(`${SquareToCoords[this.GetMoveSource(moves.list[count])]}${SquareToCoords[this.GetMoveTarget(moves.list[count])]}: ${nodes}`);
+         console.log(`${SquareToCoords[this.GetMoveSource(move)]}${SquareToCoords[this.GetMoveTarget(move)]}: ${nodes}`);
 
          this.TakeBack();
       }
@@ -2575,12 +2574,12 @@ class Engine {
          return 1;
       }
 
-      const moves: Moves = { list: [] };
+      const moves: number[] = [];
 
       this.GenerateMoves(moves);
 
-      for (let count = 0; count < moves.list.length; count++) {
-         if (!this.MakeMove(moves.list[count])) {
+      for (let count = 0; count < moves.length; count++) {
+         if (!this.MakeMove(moves[count])) {
             continue;
          }
 
@@ -2607,12 +2606,12 @@ class Engine {
     * @param move UCI-formatted move string
     */
    ParseUCIMove(move: string) {
-      const moves: Moves = { list: [] };
+      const moves: number[] = [];
       this.GenerateMoves(moves);
       
-      for (let i = 0; i < moves.list.length; i++) {
-         if ((SquareToCoords[this.GetMoveSource(moves.list[i])] + SquareToCoords[this.GetMoveTarget(moves.list[i])] + (this.GetMovePromoted(moves.list[i]) ? this.promotedPieces[this.GetMovePromoted(moves.list[i])] : '')) === move) {
-            return moves.list[i];
+      for (let i = 0; i < moves.length; i++) {
+         if ((SquareToCoords[this.GetMoveSource(moves[i])] + SquareToCoords[this.GetMoveTarget(moves[i])] + (this.GetMovePromoted(moves[i]) ? this.promotedPieces[this.GetMovePromoted(moves[i])] : '')) === move) {
+            return moves[i];
          }
       }
 
