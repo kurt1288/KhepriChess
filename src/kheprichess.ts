@@ -1908,25 +1908,28 @@ class Engine {
       for (let piece = Pieces.P; piece <= Pieces.k; piece++) {
          let bitboard = this.bitboards[piece];
          if (bitboard) {
-            const count = this.CountBits(bitboard);
-
-            // piece values
-            mgScore += count * this.pieceValue[GamePhase.Opening][piece];
-            egScore += count * this.pieceValue[GamePhase.Endgame][piece];
-
             // individual piece evaluation
             while (bitboard) {
                let square = this.GetLS1B(bitboard);
 
-               // piece square values
                if (piece <= 5) {
+                  // piece square values
                   mgScore += this.pieceSquareValues[GamePhase.Opening][piece][square];
                   egScore += this.pieceSquareValues[GamePhase.Endgame][piece][square];
+
+                  // piece values
+                  mgScore += this.pieceValue[GamePhase.Opening][piece];
+                  egScore += this.pieceValue[GamePhase.Endgame][piece];
                }
                else {
-                   // flip the square if black piece
+                  // flip the square if black piece
+                  // piece square values
                   mgScore -= this.pieceSquareValues[GamePhase.Opening][piece - 6][square ^ 56];
                   egScore -= this.pieceSquareValues[GamePhase.Endgame][piece - 6][square ^ 56];
+
+                  // piece values (addition because the piece value is negative)
+                  mgScore += this.pieceValue[GamePhase.Opening][piece];
+                  egScore += this.pieceValue[GamePhase.Endgame][piece];
                }
 
                // queens
