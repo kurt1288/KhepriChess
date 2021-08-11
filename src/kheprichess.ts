@@ -1912,7 +1912,7 @@ class Engine {
 
             // piece values
             mgScore += count * this.pieceValue[GamePhase.Opening][piece];
-            egScore += count * this.pieceValue[GamePhase.Opening][piece];
+            egScore += count * this.pieceValue[GamePhase.Endgame][piece];
 
             // individual piece evaluation
             while (bitboard) {
