@@ -144,7 +144,7 @@ function generateMagicNumber() {
 
 class Engine {
    readonly name = "KhepriChess";
-   readonly version = "0.5.0";
+   readonly version = "0.6.0";
    readonly author = "Kurt Peters";
    private bitboards = [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n];
    private occupancies = [0n, 0n, 0n];
@@ -2175,11 +2175,10 @@ class Engine {
                hashScore += this.ply;
             }
             
-            if (ttHash.flag === this.hashExact
-               || (ttHash.flag === this.hashBeta
-                     ? ttHash.score >= beta : ttHash.score <= alpha)) {
-                  return hashScore;
-               }
+            if (ttHash.flag === this.hashExact ||
+               (ttHash.flag === this.hashBeta ? ttHash.score >= beta : ttHash.score <= alpha)) {
+               return hashScore;
+            }
          }
       }
 
@@ -2188,7 +2187,7 @@ class Engine {
       }
 
       if (depth === 0) {
-         return this.Quiescence(alpha, beta);
+         return this.Quiescence(alpha, beta, 0);
       }
 
       if (this.ply >= this.maxPly) {
@@ -2257,12 +2256,12 @@ class Engine {
             let rvalue = staticEval + this.pieceValue[GamePhase.Opening][Pieces.P];
             if (rvalue < beta) {
                if (depth === 1) {
-                  let newValue = this.Quiescence(alpha, beta);
+                  let newValue = this.Quiescence(alpha, beta, depth);
                   return Math.max(newValue, rvalue);
                }
                rvalue += (this.pieceValue[GamePhase.Opening][Pieces.P] * 2);
                if (rvalue < beta && depth <= 3) {
-                  let newValue = this.Quiescence(alpha, beta);
+                  let newValue = this.Quiescence(alpha, beta, depth);
                   if (newValue < beta) {
                      return Math.max(newValue, rvalue);
                   }
@@ -2375,8 +2374,35 @@ class Engine {
       return alpha;
    }
 
-   private Quiescence(alpha: number, beta: number) {
+   private Quiescence(alpha: number, beta: number, depth: number) {
       this.nodesCount++;
+
+      // transposition table lookup
+      const ttHash = this.ProbeHash();
+
+      // normally you'd do "ttHash !== this.hashNoMove", but
+      // for typing reasons just check if it's a number type
+      // so the IDE/Typescript doesn't complain.
+      // it will only be a number type if there's no move so
+      // this should be okay
+      if (this.ply && typeof ttHash !== 'number') {
+         let hashScore = ttHash.score;
+
+         if (ttHash.depth >= depth) {
+            if (hashScore > this.MATE_SCORE) {
+               hashScore -= this.ply;
+            }
+   
+            if (hashScore < -this.MATE_SCORE) {
+               hashScore += this.ply;
+            }
+            
+            if (ttHash.flag === this.hashExact ||
+               (ttHash.flag === this.hashBeta ? ttHash.score >= beta : ttHash.score <= alpha)) {
+               return hashScore;
+            }
+         }
+      }
 
       if (this.ply >= this.maxPly) {
          return this.Evaluate();
@@ -2411,7 +2437,7 @@ class Engine {
             continue;
          }
 
-         let score = -this.Quiescence(-beta, -alpha);
+         let score = -this.Quiescence(-beta, -alpha, depth);
 
          this.ply--;
 
