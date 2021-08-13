@@ -2105,7 +2105,7 @@ class Engine {
 
          const infoScore = () => {
             if (score < -this.IS_MATE) {
-               return `mate ${(-this.MATE_SCORE - score) / -2}`; // engine is being mated
+               return `mate ${(-this.MATE_SCORE - score) / 2}`; // engine is being mated
             }
             else if (score > this.IS_MATE) {
                return `mate ${(this.MATE_SCORE - score + 1) / 2}`; // engine is mating
