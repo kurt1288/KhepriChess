@@ -86,6 +86,11 @@
          if (move === null) return 'snapback';
 
          const moveValue = source + target;
+
+         if (move.promotion) {
+            moveValue += move.promotion;
+         }
+
          moves.push(moveValue);
 
          setTimeout(makeEngineMove, 100);
