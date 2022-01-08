@@ -85,7 +85,7 @@
          // illegal move
          if (move === null) return 'snapback';
 
-         const moveValue = source + target;
+         let moveValue = source + target;
 
          if (move.promotion) {
             moveValue += move.promotion;
