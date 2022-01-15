@@ -144,7 +144,7 @@ function generateMagicNumber() {
 
 class Engine {
    readonly name = "KhepriChess";
-   readonly version = "0.6.0";
+   readonly version = "1.0.0";
    readonly author = "Kurt Peters";
    private bitboards = [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n];
    private occupancies = [0n, 0n, 0n];
