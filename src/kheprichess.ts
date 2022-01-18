@@ -163,6 +163,7 @@ class Engine {
    private readonly pawnAttacks: bigint[][] = Array.from(Array(2), () => new Array(64));
    private readonly knightAttacks: bigint[] = Array(64);
    private readonly kingAttacks: bigint[] = Array(64);
+   private readonly sliderRays: bigint[] = Array(64);
    private readonly bishopMasks: bigint[] = Array(64);
    private readonly bishopAttacks: bigint[][] = Array.from(Array(64), () => new Array(512));
    private readonly bishopRelevantBits = [
@@ -524,6 +525,7 @@ class Engine {
       this.InitJumperAttacks();
       this.InitSliderAttacks(Piece.bishop);
       this.InitSliderAttacks(Piece.rook);
+      this.InitSliderRays();
 
       // initialize random hash keys
       this.InitHashKeys();
@@ -1090,6 +1092,49 @@ class Engine {
       return (this.GetBishopAttacks(square, occupancy) | this.GetRookAttacks(square, occupancy));
    }
 
+   private InitSliderRays() {
+      for (let square = 0; square < 64; square++) {
+         let attacks = 0n;
+
+         const targetRank = Math.floor(square / 8);
+         const targetFile = square % 8;
+
+         for (let r = targetRank + 1, f = targetFile + 1; r <= 7 && f <= 7; r++, f++) {
+            attacks |= (1n << (BigInt(r) * 8n + BigInt(f)));
+         }
+         
+         for (let r = targetRank - 1, f = targetFile + 1; r >= 0 && f <= 7; r--, f++) {
+            attacks |= (1n << (BigInt(r) * 8n + BigInt(f)));
+         }
+
+         for (let r = targetRank + 1, f = targetFile - 1; r <= 7 && f >= 0; r++, f--) {
+            attacks |= (1n << (BigInt(r) * 8n + BigInt(f)));
+         }
+
+         for (let r = targetRank - 1, f = targetFile - 1; r >= 0 && f >= 0; r--, f--) {
+            attacks |= (1n << (BigInt(r) * 8n + BigInt(f)));
+         }
+
+         for (let r = targetRank + 1; r <= 7; r++) {
+            attacks |= (1n << (BigInt(r) * 8n + BigInt(targetFile)));
+         }
+   
+         for (let r = targetRank - 1; r >= 0; r--) {
+            attacks |= (1n << (BigInt(r) * 8n + BigInt(targetFile)));
+         }
+   
+         for (let f = targetFile + 1; f <= 7; f++) {
+            attacks |= 1n << (BigInt(targetRank) * 8n + BigInt(f));
+         }
+   
+         for (let f = targetFile - 1; f >= 0; f--) {
+            attacks |= 1n << (BigInt(targetRank) * 8n + BigInt(f));
+         }
+
+         this.sliderRays[square] = BigInt.asUintN(64, attacks);
+      }
+   }
+
    private InitSliderAttacks(bishop: Piece) {
       for (let square = 0; square < 64; square++) {
          this.bishopMasks[square] = this.MaskBishopAttacks(square);
@@ -1157,10 +1202,10 @@ class Engine {
       if (this.knightAttacks[square] & knightBoard)
          return 1;
 
-      if (this.GetBishopAttacks(square, this.occupancies[SideToMove.Both]) & bishopsQueens)
+      if ((this.sliderRays[square] & bishopsQueens) && (this.GetBishopAttacks(square, this.occupancies[SideToMove.Both]) & bishopsQueens))
          return 1;
 
-      if (this.GetRookAttacks(square, this.occupancies[SideToMove.Both]) & rooksQueens)
+      if ((this.sliderRays[square] & rooksQueens) && (this.GetRookAttacks(square, this.occupancies[SideToMove.Both]) & rooksQueens))
          return 1;
 
       if (this.kingAttacks[square] & kingBoard)
