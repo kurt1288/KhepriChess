@@ -2573,27 +2573,34 @@ class Engine {
    * <><><><><><><><><><><><><><><><><><>
    */
 
-   Perft(depth: number) {
-      const start = Date.now();
-      const moves: number[] = [];
-
-      this.GenerateMoves(moves);
-
-      for (let count = 0; count < moves.length; count++) {    
-         const move = moves[count];
-
-         if (!this.MakeMove(move)) {
-            continue;
+   Perft(depth: number, output = false): Promise<number> {
+      return new Promise((resolve, reject) => {
+         const start = Date.now();
+         const moves: number[] = [];
+   
+         this.GenerateMoves(moves);
+   
+         for (let count = 0; count < moves.length; count++) {    
+            const move = moves[count];
+   
+            if (!this.MakeMove(move)) {
+               continue;
+            }
+   
+            let nodes = this.PerftDriver(depth - 1);
+            if (output) {
+               console.log(`${SquareToCoords[this.GetMoveSource(move)]}${SquareToCoords[this.GetMoveTarget(move)]}: ${nodes}`);
+            }
+   
+            this.TakeBack();
          }
-
-         let nodes = this.PerftDriver(depth - 1);
-         console.log(`${SquareToCoords[this.GetMoveSource(move)]}${SquareToCoords[this.GetMoveTarget(move)]}: ${nodes}`);
-
-         this.TakeBack();
-      }
-
-      console.log(`Time taken: ${Date.now() - start} ms`);
-      console.log(`Nodes: ${(this.nodesCount).toLocaleString()}`);
+   
+         if (output) {
+            console.log(`Time taken: ${Date.now() - start} ms`);
+            console.log(`Nodes: ${(this.nodesCount).toLocaleString()}`);
+         }
+         resolve(this.nodesCount);
+      });
    }
 
    private PerftDriver(depth: number) {
