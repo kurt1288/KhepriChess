@@ -2199,16 +2199,27 @@ class Engine {
          return 0;
       }
 
+      if (this.ply && this.IsRepetition()) {
+         return 0;
+      }
+
+      if (depth === 0) {
+         return this.Quiescence(alpha, beta, 0);
+      }
+
+      if (this.ply >= this.maxPly) {
+         return this.Evaluate();
+      }
+
+      const inCheck = this.IsSquareAttacked(this.side === SideToMove.White ? this.GetLS1B(this.bitboards[Pieces.K]) : this.GetLS1B(this.bitboards[Pieces.k]), this.side ^ 1);
+
+      if (inCheck) depth++;
+
       // transposition table lookup
       const ttHash = this.ProbeHash();
-      bestMove = typeof ttHash !== 'number' ? ttHash.move : this.hashNoMove;
+      bestMove = ttHash ? ttHash.move : this.hashNoMove;
 
-      // normally you'd do "ttHash !== this.hashNoMove", but
-      // for typing reasons just check if it's a number type
-      // so the IDE/Typescript doesn't complain.
-      // it will only be a number type if there's no move so
-      // this should be okay
-      if (this.ply && !isPVNode && typeof ttHash !== 'number') {
+      if (this.ply && !isPVNode && ttHash) {
          let hashScore = ttHash.score;
 
          if (ttHash.depth >= depth) {
@@ -2227,20 +2238,8 @@ class Engine {
          }
       }
 
-      if (this.ply && this.IsRepetition()) {
-         return 0;
-      }
-
-      if (depth === 0) {
-         return this.Quiescence(alpha, beta, 0);
-      }
-
-      if (this.ply >= this.maxPly) {
-         return this.Evaluate();
-      }
-
       // mate distance pruning
-      const matingValue = this.MATE_SCORE - this.ply;
+      let matingValue = this.MATE_SCORE - this.ply;
       if (matingValue < beta) {
          beta = matingValue;
          if (alpha >= matingValue) {
@@ -2248,70 +2247,50 @@ class Engine {
          }
       }
 
-      if (-matingValue > alpha) {
-         alpha = -matingValue;
-         if (beta <= -matingValue) {
-            return -matingValue;
+      matingValue = -this.MATE_SCORE + this.ply;
+      if (matingValue > alpha) {
+         alpha = matingValue;
+         if (beta <= matingValue) {
+            return matingValue;
          }
       }
-      
-      const inCheck = this.IsSquareAttacked(this.side === SideToMove.White ? this.GetLS1B(this.bitboards[Pieces.K]) : this.GetLS1B(this.bitboards[Pieces.k]), this.side ^ 1);
 
-      if (inCheck) depth++;
+      // Reverse Futility Pruning
+      if (!inCheck && (this.Evaluate() - (90 * depth) >= beta)) {
+         return beta;
+      }
 
-      if (nullMoveAllowed && !inCheck && !isPVNode) {
-         const staticEval = this.Evaluate();
+      // Null move pruning
+      if (nullMoveAllowed && !inCheck && depth >= 3) {
+         // copy board
+         this.moveStack.push({
+            bitboards: this.bitboards.slice(0),
+            occupancies: this.occupancies.slice(0),
+            side: this.side,
+            enpassant: this.enpassant,
+            castle: this.castle,
+            hashKey: this.hashKey
+         });
 
-         // null move
-         if (this.ply && depth > 2 && (staticEval >= beta)) {
-            // copy board
-            this.moveStack.push({
-               bitboards: this.bitboards.slice(0),
-               occupancies: this.occupancies.slice(0),
-               side: this.side,
-               enpassant: this.enpassant,
-               castle: this.castle,
-               hashKey: this.hashKey
-            });
-
-            if (this.enpassant !== Square.no_sq) {
-               this.hashKey ^= this.enpassantKeys[this.enpassant];
-            }
-
-            this.side ^= 1;
-            this.enpassant = Square.no_sq;
-
-            this.hashKey ^= this.sideKey;
-
-            this.ply++;
-
-            score = -this.Negamax(-beta, -beta + 1, depth - 3, false);
-
-            this.ply--;
-
-            this.TakeBack();
-
-            if (score >= beta) {
-               return beta;
-            }
+         if (this.enpassant !== Square.no_sq) {
+            this.hashKey ^= this.enpassantKeys[this.enpassant];
          }
-         
-         // razoring
-         if (depth < 2) {
-            let rvalue = staticEval + this.pieceValue[GamePhase.Opening][Pieces.P];
-            if (rvalue < beta) {
-               if (depth === 1) {
-                  let newValue = this.Quiescence(alpha, beta, depth);
-                  return Math.max(newValue, rvalue);
-               }
-               rvalue += (this.pieceValue[GamePhase.Opening][Pieces.P] * 2);
-               if (rvalue < beta && depth <= 3) {
-                  let newValue = this.Quiescence(alpha, beta, depth);
-                  if (newValue < beta) {
-                     return Math.max(newValue, rvalue);
-                  }
-               }
-            }
+
+         this.side ^= 1;
+         this.enpassant = Square.no_sq;
+
+         this.hashKey ^= this.sideKey;
+
+         this.ply++;
+
+         score = -this.Negamax(-beta, 1 - beta, depth - 3, false);
+
+         this.TakeBack();
+
+         this.ply--;
+
+         if (score >= beta) {
+            return score;
          }
       }
 
@@ -2336,13 +2315,7 @@ class Engine {
          legalMovesCount++;
 
          // Late move reduction (LMR)
-         if (depth >= 3
-            && movesSearched >= 4
-            //&& !isPVNode
-            && !inCheck
-            && !this.GetMoveCapture(move)
-            && !this.GetMovePromoted(move)
-            ) {
+         if (depth >= 3 && movesSearched >= 4 && !inCheck && !this.GetMoveCapture(move) && !this.GetMovePromoted(move)) {
 
             // reduction factor
             const R = movesSearched <= 6 ? 1 : Math.floor(depth / 3);
