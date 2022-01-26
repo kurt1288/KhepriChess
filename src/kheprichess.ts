@@ -2535,9 +2535,16 @@ class Engine {
             }
          }
 
-         // target piece value - moving piece value (MVV - LVV)
+         // target piece value - moving piece value (MvvLva)
          // convert target piece to white piece value (so no negative piece values)
-         return (Math.abs(this.pieceValue[this.gamePhase][Math.abs(targetPiece)]) - (this.GetMovePiece(move) + 1)) + 10000;
+         let attacker = this.GetMovePiece(move);
+         if (attacker > 5) {
+            attacker = attacker - 6;
+         }
+         if (targetPiece > 5) {
+            targetPiece = targetPiece - 6;
+         }
+         return this.pieceValue[this.gamePhase][targetPiece] - attacker + 10000;
       }
       else {
          if (this.killerMoves[0][this.ply] === move) {
