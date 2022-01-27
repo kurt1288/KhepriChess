@@ -2104,13 +2104,41 @@ class Engine {
       this.timing.startTime = Date.now();
 
       // initialize
+      let bestMove = "";
       let alpha = -this.INFINITY;
       let beta = this.INFINITY;
       let score = -this.INFINITY;
       let delta = -this.INFINITY;
 
+      const getPvMove = () => {
+         const pvNode = this.pvTable[0][0];
+         return `${SquareToCoords[this.GetMoveSource(pvNode)]}${SquareToCoords[this.GetMoveTarget(pvNode)]}${this.GetMovePromoted(pvNode) ? this.promotedPieces[this.GetMovePromoted(pvNode)] : ''}`;
+      }
+
+      const infoScore = () => {
+         if (score < -this.IS_MATE) {
+            return `mate ${(-this.MATE_SCORE - score) / 2}`; // engine is being mated
+         }
+         else if (score > this.IS_MATE) {
+            return `mate ${(this.MATE_SCORE - score + 1) / 2}`; // engine is mating
+         }
+         else {
+            return `cp ${score}`;
+         }
+      }
+
+      const pvnodes = () => {
+         let string = "";
+         for (let i = 0; i < this.pvLength[0]; i++) {
+            string += `${SquareToCoords[this.GetMoveSource(this.pvTable[0][i])]}${SquareToCoords[this.GetMoveTarget(this.pvTable[0][i])]}${this.GetMovePromoted(this.pvTable[0][i]) ? this.promotedPieces[this.GetMovePromoted(this.pvTable[0][i])] : ''}`;
+            string += " ";
+         }
+         return string;
+      }
+
       // iterative deepening loop
-      for (let currentDepth = 1; !this.shouldStop && currentDepth <= depth; currentDepth++) {
+      IterativeLoop:
+      for (let currentDepth = 1; depth <= this.maxPly && currentDepth <= depth; currentDepth++) {
          this.followPv = true;
          
          // reset aspiration window starting size
@@ -2125,7 +2153,8 @@ class Engine {
             score = this.Negamax(alpha, beta, currentDepth, true);
 
             if (this.shouldStop) {
-               break;
+               bestMove = getPvMove();
+               break IterativeLoop;
             }
 
             // search failed low
@@ -2144,30 +2173,7 @@ class Engine {
             delta += Math.floor(delta / 4) + 5;
          }
 
-         if (this.shouldStop) {
-            break;
-         }
-
-         const infoScore = () => {
-            if (score < -this.IS_MATE) {
-               return `mate ${(-this.MATE_SCORE - score) / 2}`; // engine is being mated
-            }
-            else if (score > this.IS_MATE) {
-               return `mate ${(this.MATE_SCORE - score + 1) / 2}`; // engine is mating
-            }
-            else {
-               return `cp ${score}`;
-            }
-         }
-
-         const pvnodes = () => {
-            let string = "";
-            for (let i = 0; i < this.pvLength[0]; i++) {
-               string += `${SquareToCoords[this.GetMoveSource(this.pvTable[0][i])]}${SquareToCoords[this.GetMoveTarget(this.pvTable[0][i])]}${this.GetMovePromoted(this.pvTable[0][i]) ? this.promotedPieces[this.GetMovePromoted(this.pvTable[0][i])] : ''}`;
-               string += " ";
-            }
-            return string;
-         }
+         bestMove = getPvMove();
 
          // response format for UCI
          console.log(`info score ${infoScore()} depth ${currentDepth} nodes ${this.nodesCount} time ${Date.now() - this.timing.startTime} pv ${pvnodes()}`);
@@ -2178,9 +2184,9 @@ class Engine {
          }
       }
 
-      console.log(`bestmove ${SquareToCoords[this.GetMoveSource(this.pvTable[0][0])]}${SquareToCoords[this.GetMoveTarget(this.pvTable[0][0])]}${this.GetMovePromoted(this.pvTable[0][0]) ? this.promotedPieces[this.GetMovePromoted(this.pvTable[0][0])] : ''}`);
+      console.log(`bestmove ${bestMove}`);
 
-      return `${SquareToCoords[this.GetMoveSource(this.pvTable[0][0])]}${SquareToCoords[this.GetMoveTarget(this.pvTable[0][0])]}${this.GetMovePromoted(this.pvTable[0][0]) ? this.promotedPieces[this.GetMovePromoted(this.pvTable[0][0])] : ''}`;
+      return bestMove;
    }
 
    private Negamax(alpha: number, beta: number, depth: number, nullMoveAllowed: boolean) {
