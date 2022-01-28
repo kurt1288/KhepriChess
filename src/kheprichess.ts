@@ -61,6 +61,8 @@ enum Pieces {
    P, N, B, R, Q, K, p, n, b, r, q, k
 }
 
+const PhaseValues = [ 0, 1, 1, 2, 4, 0, 0, 1, 1, 2, 4, 0];
+
 const SquareToCoords = [
    "a8", "b8", "c8", "d8", "e8", "f8", "g8", "h8",
    "a7", "b7", "c7", "d7", "e7", "f7", "g7", "h7",
@@ -1977,20 +1979,7 @@ class Engine {
                   egScore += this.pieceValue[GamePhase.Endgame][piece];
                }
 
-               // queens
-               if (piece === Pieces.Q || piece === Pieces.q) {
-                  phase -= 4;
-               }
-
-               // knights
-               if (piece === Pieces.N || piece === Pieces.n) {
-                  phase -= 1;
-               }
-
-               // bishops
-               if (piece === Pieces.B || piece === Pieces.b) {
-                  phase -= 1;
-               }
+               phase -= PhaseValues[piece];
 
                // white pawn evaluation
                if (piece === Pieces.P) {
@@ -2053,8 +2042,6 @@ class Engine {
                      mgScore += this.fileOpenScore;
                      egScore += this.fileOpenScore;
                   }
-
-                  phase -= 2;
                }
 
                // black rook evaluation
@@ -2070,8 +2057,6 @@ class Engine {
                      mgScore -= this.fileOpenScore;
                      egScore -= this.fileOpenScore;
                   }
-
-                  phase -= 2;
                }
 
                bitboard = this.RemoveBit(bitboard, square);
