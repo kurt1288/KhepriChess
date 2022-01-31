@@ -111,8 +111,24 @@ export default class Tuner {
       }
       console.log(`Tuning complete in ${Date.now() - startTime}`);
       console.log(`Passed pawn bonus: ${passedBonus}`);
-      console.log(`Piece values: ${pieceValue}`);
-      console.log(`Piece square values: ${pieceSquareValues}`);
+      console.log(`Opening piece values: ${pieceValue[0]}`);
+      console.log(`Endgame piece values: ${pieceValue[1]}`);
+      console.log("\n---Piece square tables ---\n");
+      console.log("Opening piece square tables:\n");
+      console.log(`Pawn: ${pieceSquareValues[0][0]}`);
+      console.log(`Knight: ${pieceSquareValues[0][1]}`);
+      console.log(`Bishop: ${pieceSquareValues[0][2]}`);
+      console.log(`Rook: ${pieceSquareValues[0][3]}`);
+      console.log(`Queen: ${pieceSquareValues[0][4]}`);
+      console.log(`King: ${pieceSquareValues[0][5]}\n`);
+      console.log("Endgame piece square tables:\n");
+      console.log(`Pawn: ${pieceSquareValues[1][0]}`);
+      console.log(`Knight: ${pieceSquareValues[1][1]}`);
+      console.log(`Bishop: ${pieceSquareValues[1][2]}`);
+      console.log(`Rook: ${pieceSquareValues[1][3]}`);
+      console.log(`Queen: ${pieceSquareValues[1][4]}`);
+      console.log(`King: ${pieceSquareValues[1][5]}\n`);
+      process.exit();
    }
 }
 
