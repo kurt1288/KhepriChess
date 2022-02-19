@@ -1879,9 +1879,12 @@ class Engine {
    private isolatedMasks = Array(64).fill(0n);
    private wPassedMasks = Array(64).fill(0n);
    private bPassedMasks = Array(64).fill(0n);
-   private readonly doubledPenalty = 15;
-   private readonly isolatedPenalty = 7;
-   private readonly passedBonus = [0, 2, 4, 10, 15, 25, 50, 200];
+   private readonly MGdoubledPenalty = 2;
+   private readonly EGdoubledPenalty = 15;
+   private readonly MGisolatedPenalty = 20;
+   private readonly EGisolatedPenalty = 2;
+   private readonly MGpassedBonus = [0, 5, 1,  3, 15, 30, 100, 0];
+   private readonly EGpassedBonus = [0, 0, 4, 10, 25, 60, 120, 0];
 
    private readonly fileSemiOpenScore = 7;
    private readonly fileOpenScore = 15;
@@ -1927,13 +1930,19 @@ class Engine {
             this.bPassedMasks[square] |= this.SetFileRankMask(file - 1, -1)
                                           | this.SetFileRankMask(file, -1)
                                           | this.SetFileRankMask(file + 1, -1);
+         }
+      }
 
-            for (let i = 0; i < (8 - rank); i++) {
-               this.wPassedMasks[square] &= ~this.rankMasks[(7 - i) * 8 + file];
+      for (let rank = 0; rank < 8; rank++) {
+         for (let file = 0; file < 8; file++) {
+            const square = rank * 8 + file;
+
+            for (let i = square; i < 63; i++) {
+               this.wPassedMasks[square] &= ~this.rankMasks[i];
             }
-
-            for (let i = 0; i < (rank + 1); i++) {
-               this.bPassedMasks[square] &= ~this.rankMasks[i * 8 + file];
+      
+            for (let i = 0; i < square; i++) {
+               this.bPassedMasks[square] &= ~this.rankMasks[i];
             }
          }
       }
@@ -1948,125 +1957,127 @@ class Engine {
    }
 
    private Evaluate() {
-      let mgScore = 0; // opening/middlegame score
-      let egScore = 0; // endgame score
+      let mgScores = [0, 0]; // opening/middlegame score
+      let egScores = [0, 0]; // endgame score
       let phase = 24; // (N*4) + (B*4) + (R*4) + (Q*2), where N = 1, B = 1, R = 2, Q = 4
 
       for (let piece = Pieces.P; piece <= Pieces.k; piece++) {
          let bitboard = this.bitboards[piece];
-         if (bitboard) {
-            // individual piece evaluation
-            while (bitboard) {
-               let square = this.GetLS1B(bitboard);
+         // individual piece evaluation
+         while (bitboard) {
+            let square = this.GetLS1B(bitboard);
 
-               if (piece <= 5) {
-                  // piece square values
-                  mgScore += this.pieceSquareValues[GamePhase.Opening][piece][square];
-                  egScore += this.pieceSquareValues[GamePhase.Endgame][piece][square];
+            if (piece <= 5) {
+               // piece square values
+               mgScores[SideToMove.White] += this.pieceSquareValues[GamePhase.Opening][piece][square];
+               egScores[SideToMove.White] += this.pieceSquareValues[GamePhase.Endgame][piece][square];
 
-                  // piece values
-                  mgScore += this.pieceValue[GamePhase.Opening][piece];
-                  egScore += this.pieceValue[GamePhase.Endgame][piece];
-               }
-               else {
-                  // flip the square if black piece
-                  // piece square values
-                  mgScore -= this.pieceSquareValues[GamePhase.Opening][piece - 6][square ^ 56];
-                  egScore -= this.pieceSquareValues[GamePhase.Endgame][piece - 6][square ^ 56];
+               // piece values
+               mgScores[SideToMove.White] += this.pieceValue[GamePhase.Opening][piece];
+               egScores[SideToMove.White] += this.pieceValue[GamePhase.Endgame][piece];
+            }
+            else {
+               // flip the square if black piece
+               // piece square values
+               mgScores[SideToMove.Black] += this.pieceSquareValues[GamePhase.Opening][piece - 6][square ^ 56];
+               egScores[SideToMove.Black] += this.pieceSquareValues[GamePhase.Endgame][piece - 6][square ^ 56];
 
-                  // piece values (addition because the piece value is negative)
-                  mgScore += this.pieceValue[GamePhase.Opening][piece];
-                  egScore += this.pieceValue[GamePhase.Endgame][piece];
-               }
+               // piece values (addition because the piece value is negative)
+               mgScores[SideToMove.Black] += this.pieceValue[GamePhase.Opening][piece - 6];
+               egScores[SideToMove.Black] += this.pieceValue[GamePhase.Endgame][piece - 6];
+            }
 
-               phase -= PhaseValues[piece];
+            phase -= PhaseValues[piece];
 
-               // white pawn evaluation
-               if (piece === Pieces.P) {
+            switch (piece) {
+               case Pieces.P: {
                   // doubled pawns
                   // check the square behind the current pawn
-                  if (this.GetBit(this.bitboards[Pieces.P], square + 8) !== 0n) {
-                     mgScore -= this.doubledPenalty;
-                     egScore -= this.doubledPenalty;
+                  const wPawnsOnFile = (this.bitboards[Pieces.P] & this.fileMasks[square]);
+                  if ((wPawnsOnFile & (wPawnsOnFile - 1n)) !== 0n) {
+                     mgScores[SideToMove.White] -= this.MGdoubledPenalty;
+                     egScores[SideToMove.White] -= this.EGdoubledPenalty;
                   }
 
                   // isolated pawns
                   if ((this.bitboards[Pieces.P] & this.isolatedMasks[square]) === 0n) {
-                     mgScore -= this.isolatedPenalty;
-                     egScore -= this.isolatedPenalty;
+                     mgScores[SideToMove.White] -= this.MGisolatedPenalty;
+                     egScores[SideToMove.White] -= this.EGisolatedPenalty;
                   }
                   
                   // passed pawns
                   if ((this.wPassedMasks[square] & this.bitboards[Pieces.p]) === 0n) {
                      // https://www.chessprogramming.org/Ranks
                      const rank = 7 - (square >> 3);
-                     mgScore += this.passedBonus[rank];
-                     egScore += this.passedBonus[rank];
+                     mgScores[SideToMove.White] += this.MGpassedBonus[rank];
+                     egScores[SideToMove.White] += this.EGpassedBonus[rank];
                   }
+                  break;
                }
-
-               // black pawn evaluation
-               if (piece === Pieces.p) {
+               case Pieces.p: {
                   // doubled pawns
                   // check the square behind the current pawn
-                  if (this.GetBit(this.bitboards[Pieces.p], square - 8) !== 0n) {
-                     mgScore += this.doubledPenalty;
-                     egScore += this.doubledPenalty;
+                  const bPawnsOnFile = (this.bitboards[Pieces.p] & this.fileMasks[square]);
+                  if ((bPawnsOnFile & (bPawnsOnFile - 1n)) !== 0n) {
+                     mgScores[SideToMove.Black] -= this.MGdoubledPenalty;
+                     egScores[SideToMove.Black] -= this.EGdoubledPenalty;
                   }
 
                   // isolated pawns
-                  if ((this.bitboards[Pieces.p] & this.isolatedMasks[square ^ 56]) === 0n) {
-                     mgScore += this.isolatedPenalty;
-                     egScore += this.isolatedPenalty;
+                  if ((this.bitboards[Pieces.p] & this.isolatedMasks[square]) === 0n) {
+                     mgScores[SideToMove.Black] -= this.MGisolatedPenalty;
+                     egScores[SideToMove.Black] -= this.EGisolatedPenalty;
                   }
                   
                   // passed pawns
                   if ((this.bPassedMasks[square] & this.bitboards[Pieces.P]) === 0n) {
                      // https://www.chessprogramming.org/Ranks
                      const rank = 7 - ((square ^ 56) >> 3);
-                     mgScore -= this.passedBonus[rank];
-                     egScore -= this.passedBonus[rank];
+                     mgScores[SideToMove.Black] += this.MGpassedBonus[rank];
+                     egScores[SideToMove.Black] += this.EGpassedBonus[rank];
                   }
+                  break;
                }
-
-               // white rook evaluation
-               if (piece === Pieces.R) {
+               case Pieces.R: {
                   // semi-open file bonus
                   if ((this.bitboards[Pieces.P] & this.fileMasks[square]) === 0n) {
-                     mgScore += this.fileSemiOpenScore;
-                     egScore += this.fileSemiOpenScore;
+                     mgScores[SideToMove.White] += this.fileSemiOpenScore;
+                     egScores[SideToMove.White] += this.fileSemiOpenScore;
                   }
 
                   // open file bonus
                   if (((this.bitboards[Pieces.P] | this.bitboards[Pieces.p]) & this.fileMasks[square]) === 0n) {
-                     mgScore += this.fileOpenScore;
-                     egScore += this.fileOpenScore;
+                     mgScores[SideToMove.White] += this.fileOpenScore;
+                     egScores[SideToMove.White] += this.fileOpenScore;
                   }
+                  break;
                }
-
-               // black rook evaluation
-               if (piece === Pieces.r) {
+               case Pieces.r: {
                   // semi-open file bonus
-                  if ((this.bitboards[Pieces.p] & this.fileMasks[square ^ 56]) === 0n) {
-                     mgScore -= this.fileSemiOpenScore;
-                     egScore -= this.fileSemiOpenScore;
+                  if ((this.bitboards[Pieces.p] & this.fileMasks[square]) === 0n) {
+                     mgScores[SideToMove.Black] += this.fileSemiOpenScore;
+                     egScores[SideToMove.Black] += this.fileSemiOpenScore;
                   }
 
                   // open file bonus
-                  if (((this.bitboards[Pieces.P] | this.bitboards[Pieces.p]) & this.fileMasks[square ^ 56]) === 0n) {
-                     mgScore -= this.fileOpenScore;
-                     egScore -= this.fileOpenScore;
+                  if (((this.bitboards[Pieces.P] | this.bitboards[Pieces.p]) & this.fileMasks[square]) === 0n) {
+                     mgScores[SideToMove.Black] += this.fileOpenScore;
+                     egScores[SideToMove.Black] += this.fileOpenScore;
                   }
+                  break;
                }
-
-               bitboard = this.RemoveBit(bitboard, square);
             }
+
+            bitboard = this.RemoveBit(bitboard, square);
          }
       }
 
       phase = ((phase * 256 + (24 / 2)) / 24) | 0;
 
-      return (((mgScore * (256 - phase)) + (egScore * phase)) / 256 | 0) * ((-1) ** this.side);
+      const mgScore = mgScores[this.side] - mgScores[this.side ^ 1];
+      const egScore = egScores[this.side] - egScores[this.side ^ 1];
+
+      return (((mgScore * (256 - phase)) + (egScore * phase)) / 256 | 0);
    }
 
    /*
