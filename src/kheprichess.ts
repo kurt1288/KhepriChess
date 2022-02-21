@@ -2296,6 +2296,18 @@ class Engine {
          }
       }
 
+      // razoring
+      if (depth <= 4) {
+         if (alpha === beta - 1) {
+            if (this.Evaluate() + 150 < beta) {
+               const value = this.Quiescence(alpha, beta, depth);
+               if (value < beta) {
+                  return value;
+               }
+            }
+         }
+      }
+
       let moves: number[] = [];
       this.GenerateMoves(moves);
 
