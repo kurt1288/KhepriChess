@@ -2184,7 +2184,6 @@ class Engine {
    }
 
    private Negamax(alpha: number, beta: number, depth: number, nullMoveAllowed: boolean) {
-      let movesSearched = 0;
       let legalMovesCount = 0;
       let score = -this.INFINITY;
       let hashFlag = this.hashAlpha;
@@ -2327,10 +2326,10 @@ class Engine {
          legalMovesCount++;
 
          // Late move reduction (LMR)
-         if (depth >= 3 && movesSearched >= 4 && !inCheck && !this.GetMoveCapture(move) && !this.GetMovePromoted(move)) {
+         if (depth >= 3 && legalMovesCount >= 4 && !inCheck && !this.GetMoveCapture(move) && !this.GetMovePromoted(move)) {
 
             // reduction factor
-            const R = movesSearched <= 6 ? 1 : Math.floor(depth / 3);
+            const R = legalMovesCount <= 6 ? 1 : Math.floor(depth / 3);
 
             // reduced search
             score = -this.Negamax(-alpha - 1, -alpha, depth - 1 - R, true);
@@ -2352,8 +2351,6 @@ class Engine {
          if (this.shouldStop) {
             return 0;
          }
-
-         movesSearched++;
 
          if (score > alpha) {
             hashFlag = this.hashExact;
