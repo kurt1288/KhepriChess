@@ -1292,7 +1292,7 @@ class Engine {
    * <><><><><><><><><><><><><><><><><><>
    */
 
-   private GeneratePawnMoves(side: SideToMove, moves: number[], bitboard: bigint, capturesOnly: boolean) {
+   private GeneratePawnMoves(side: SideToMove, moves: number[], bitboard: bigint, tacticalOnly: boolean) {
       const emptySquares = ~this.occupancies[SideToMove.Both];
       let attacks: bigint;
       let piece = side === SideToMove.White ? Pieces.P : Pieces.p;
@@ -1311,26 +1311,24 @@ class Engine {
          const fromSquare = this.GetLS1B(bitboard);
          const toSquare = side === SideToMove.White ? fromSquare - 8 : fromSquare + 8;
 
-         if (!capturesOnly) {
-            // single push
-            if (this.GetBit(bitboard, fromSquare) & pSinglePush) {
-               // promotion
-               if (side === SideToMove.White ? toSquare <= Square.h8 : toSquare >= Square.a1) {
-                  this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, side === SideToMove.White ? Pieces.Q : Pieces.q, 0, 0, 0, 0));
-                  this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, side === SideToMove.White ? Pieces.R : Pieces.r, 0, 0, 0, 0));
-                  this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, side === SideToMove.White ? Pieces.B : Pieces.b, 0, 0, 0, 0));
-                  this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, side === SideToMove.White ? Pieces.N : Pieces.n, 0, 0, 0, 0));
-               }
-               else {
-                  this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, 0, 0, 0, 0, 0));
-               }
+         // single push
+         if (this.GetBit(bitboard, fromSquare) & pSinglePush) {
+            // promotion
+            if (side === SideToMove.White ? toSquare <= Square.h8 : toSquare >= Square.a1) {
+               this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, side === SideToMove.White ? Pieces.Q : Pieces.q, 0, 0, 0, 0));
+               this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, side === SideToMove.White ? Pieces.R : Pieces.r, 0, 0, 0, 0));
+               this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, side === SideToMove.White ? Pieces.B : Pieces.b, 0, 0, 0, 0));
+               this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, side === SideToMove.White ? Pieces.N : Pieces.n, 0, 0, 0, 0));
             }
+            else if (!tacticalOnly) {
+               this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, 0, 0, 0, 0, 0));
+            }
+         }
 
-            // double push
-            if (this.GetBit(bitboard, fromSquare) & pDoublePush) {
-               this.AddMove(moves, this.EncodeMove(fromSquare, side === SideToMove.White ? (fromSquare - 16) : (fromSquare + 16), piece, 0, 0, 1, 0, 0));
-            }
-         }         
+         // double push
+         if (!tacticalOnly && this.GetBit(bitboard, fromSquare) & pDoublePush) {
+            this.AddMove(moves, this.EncodeMove(fromSquare, side === SideToMove.White ? (fromSquare - 16) : (fromSquare + 16), piece, 0, 0, 1, 0, 0));
+         }
 
          // attacks
          attacks = this.pawnAttacks[side][fromSquare] & this.occupancies[side === SideToMove.White ? SideToMove.Black : SideToMove.White];
@@ -1369,19 +1367,19 @@ class Engine {
    /**
     * Generate all moves
     */
-   private GenerateMoves(moves: number[], capturesOnly = false) {
+   private GenerateMoves(moves: number[], tacticalOnly = false) {
       let bitboard: bigint;
 
       const wpawnBB = this.bitboards[Pieces.P];
       const bpawnBB = this.bitboards[Pieces.p];
 
-      this.GeneratePawnMoves(this.side, moves, this.side === SideToMove.White ? wpawnBB : bpawnBB, capturesOnly);
+      this.GeneratePawnMoves(this.side, moves, this.side === SideToMove.White ? wpawnBB : bpawnBB, tacticalOnly);
 
       for (let piece = Pieces.P; piece <= Pieces.k; piece++) {
          // copy piece bitboard
          bitboard = this.bitboards[piece];
 
-         if (!capturesOnly) {
+         if (!tacticalOnly) {
             // generate white castling moves
             if (this.side === SideToMove.White) {
                if (piece === Pieces.K) {
@@ -1446,7 +1444,7 @@ class Engine {
 
                   const isCapture = this.GetBit(this.side === SideToMove.White ? this.occupancies[SideToMove.Black] : this.occupancies[SideToMove.White], toSquare);
 
-                  if (!capturesOnly && !isCapture) {
+                  if (!tacticalOnly && !isCapture) {
                      this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, 0, 0, 0, 0, 0));
                   }
                   else if (isCapture) {
@@ -1471,7 +1469,7 @@ class Engine {
                   const toSquare = this.GetLS1B(attacks);
 
                   const isCapture = this.GetBit(this.side === SideToMove.White ? this.occupancies[SideToMove.Black] : this.occupancies[SideToMove.White], toSquare);
-                  if (!capturesOnly && !isCapture) {
+                  if (!tacticalOnly && !isCapture) {
                      this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, 0, 0, 0, 0, 0));
                   }
                   else if (isCapture) {
@@ -1496,7 +1494,7 @@ class Engine {
                   const toSquare = this.GetLS1B(attacks);
 
                   const isCapture = this.GetBit(this.side === SideToMove.White ? this.occupancies[SideToMove.Black] : this.occupancies[SideToMove.White], toSquare);
-                  if (!capturesOnly && !isCapture) {
+                  if (!tacticalOnly && !isCapture) {
                      this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, 0, 0, 0, 0, 0));
                   }
                   else if (isCapture) {
@@ -1522,7 +1520,7 @@ class Engine {
 
                   const isCapture = this.GetBit(this.side === SideToMove.White ? this.occupancies[SideToMove.Black] : this.occupancies[SideToMove.White], toSquare);
                   
-                  if (!capturesOnly && !isCapture) {
+                  if (!tacticalOnly && !isCapture) {
                      this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, 0, 0, 0, 0, 0));
                   }
                   else if (isCapture) {
@@ -1548,7 +1546,7 @@ class Engine {
 
                   const isCapture = this.GetBit(this.side === SideToMove.White ? this.occupancies[SideToMove.Black] : this.occupancies[SideToMove.White], toSquare);
                   
-                  if (!capturesOnly && !isCapture) {
+                  if (!tacticalOnly && !isCapture) {
                      this.AddMove(moves, this.EncodeMove(fromSquare, toSquare, piece, 0, 0, 0, 0, 0));
                   }
                   else if (isCapture) {
