@@ -72,7 +72,7 @@ interface Piece {
 interface State {
     CastlingRights: CastlingRights
     EnPassSq: Square
-    Captured: Piece
+    Captured?: Piece
     Hash: bigint
     HalfMoves: number
 }
@@ -947,14 +947,14 @@ class Khepri {
                 break;
             }
             case MoveType.Capture: {
-                let captured = state.Captured;
+                let captured = state.Captured as Piece;
 
                 this.RemovePiece(piece.Type, piece.Color, to);
                 this.PlacePiece(captured.Type, captured.Color, to);
                 break;
             }
             case MoveType.EPCapture: {
-                let captured = state.Captured;
+                let captured = state.Captured as Piece;
 
                 this.RemovePiece(piece.Type, piece.Color, to);
                 const epSquare = this.Position.SideToMove === Color.White ? to + 8 : to - 8;
@@ -1012,11 +1012,39 @@ class Khepri {
     }
 
     MakeNullMove() {
+        this.stateCopy.push({
+            CastlingRights: this.Position.CastlingRights,
+            EnPassSq: this.Position.EnPassSq,
+            Hash: this.Position.Hash,
+            HalfMoves: this.Position.HalfMoves,
+        });
 
+        if (this.Position.EnPassSq !== Square.no_sq) {
+            this.Position.Hash ^= this.Zobrist.EnPassant[this.Position.EnPassSq];
+            this.Position.EnPassSq = Square.no_sq;
+        }
+        this.Position.HalfMoves = 0;
+        this.Position.SideToMove ^= 1;
+        this.Position.Hash ^= this.Zobrist.SideToMove;
+        this.Position.Ply++;
     }
 
     UnmakeNullMove() {
+        const state = this.stateCopy.pop();
 
+        if (!state) {
+            throw new Error("Unable to get state for unmake move");
+        }
+
+        this.Position.CastlingRights = state.CastlingRights;
+        if (state.EnPassSq !== Square.no_sq) {
+            this.Position.EnPassSq = state.EnPassSq;
+            this.Position.Hash ^= this.Zobrist.EnPassant[this.Position.EnPassSq];
+        }
+        this.Position.HalfMoves = state.HalfMoves;
+        this.Position.SideToMove ^= 1;
+        this.Position.Hash ^= this.Zobrist.SideToMove;
+        this.Position.Ply--;
     }
 
     RemovePiece(piece: Pieces, color: Color.Black | Color.White, square: Square) {
@@ -1885,7 +1913,7 @@ class Khepri {
         console.log(`bestmove ${bestmove}`);
     }
 
-    Negamax(depth: number, ply: number, alpha: number, beta: number, pvMoves: PVLine) {
+    Negamax(depth: number, ply: number, alpha: number, beta: number, pvMoves: PVLine, nullMoveAllowed = true) {
         let bestScore = -this.Inf;
         let bestMove = 0;
         let flag = HashFlag.Alpha;
@@ -1905,10 +1933,12 @@ class Khepri {
             return this.Quiescence(alpha, beta, ply);
         }
 
+        // Check for draw positions (3-fold)
         if (ply > 0 && this.IsRepetition()) {
             return 0;
         }
 
+        // Check the transposition table for matching position and score
         const { ttScore, ttMove } = this.ProbeTT(this.Position.Hash, depth, ply, alpha, beta);
         if (ttScore !== this.HashNoMove && ply !== 0) {
             return ttScore;
@@ -1918,10 +1948,26 @@ class Khepri {
         let score = ttScore;
 
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
+        const childPVMoves: PVLine = { moves: [] };
+
+        // Null move pruning
+        if (nullMoveAllowed && !inCheck && depth >= 3) {
+            this.MakeNullMove();
+
+            const R = 1 + Math.floor(depth / 3);
+            score = -this.Negamax(depth - 1 - R, ply + 1, -beta, 1 - beta, childPVMoves, false);
+            
+            this.UnmakeNullMove();
+
+            childPVMoves.moves.length = 0;
+
+            if (score >= beta) {
+                return beta;
+            }
+        }
 
         let moves = this.GenerateMoves();
         moves = this.SortMoves(moves, ttMove, ply);
-        const childPVMoves: PVLine = { moves: [] };
 
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
