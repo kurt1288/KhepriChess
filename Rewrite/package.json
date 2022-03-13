@@ -1,0 +1,12 @@
+{
+  "name": "kheprichess",
+  "scripts": {
+    "start": "webpack serve --config-name devConfig",
+    "build": "webpack --config-name browserConfig --config-name uciConfig"
+  },
+  "devDependencies": {
+    "ts-loader": "^9.2.7",
+    "typescript": "^4.5.5",
+    "webpack": "^5.69.1"
+  }
+}
