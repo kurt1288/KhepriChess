@@ -1918,6 +1918,8 @@ class Khepri {
         let bestMove = 0;
         let flag = HashFlag.Alpha;
         let legalMoves = 0;
+        const isPVNode = beta - alpha > 1;
+
         this.search.nodes++;
 
         // Check whether search time is up every 1000 nodes
@@ -1950,13 +1952,20 @@ class Khepri {
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
         const childPVMoves: PVLine = { moves: [] };
 
+        const staticEval = this.Evaluate();
+
+        // Reverse futility pruning
+        if (!isPVNode && !inCheck && (staticEval - (90 * depth) >= beta)) {
+            return staticEval - (90 * depth);
+        }
+
         // Null move pruning
         if (nullMoveAllowed && !inCheck && depth >= 3) {
             this.MakeNullMove();
 
             const R = 1 + Math.floor(depth / 3);
             score = -this.Negamax(depth - 1 - R, ply + 1, -beta, 1 - beta, childPVMoves, false);
-            
+
             this.UnmakeNullMove();
 
             childPVMoves.moves.length = 0;
