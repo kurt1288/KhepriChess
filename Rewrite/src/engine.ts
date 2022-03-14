@@ -1919,6 +1919,8 @@ class Khepri {
         let flag = HashFlag.Alpha;
         let legalMoves = 0;
         const isPVNode = beta - alpha > 1;
+        const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
+        const childPVMoves: PVLine = { moves: [] };
 
         this.search.nodes++;
 
@@ -1929,6 +1931,11 @@ class Khepri {
 
         if (this.Timer.stop) {
             return 0;
+        }
+
+        // Check extension - search one more ply if side to move is in check
+        if (inCheck) {
+            depth += 1;
         }
 
         if (depth <= 0) {
@@ -1948,9 +1955,6 @@ class Khepri {
 
         bestMove = ttMove;
         let score = ttScore;
-
-        const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
-        const childPVMoves: PVLine = { moves: [] };
 
         const staticEval = this.Evaluate();
 
