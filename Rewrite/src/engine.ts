@@ -711,6 +711,17 @@ class Khepri {
         return source | (target << 6) | (moveType << 12);
     }
 
+    MoveIsCapture(move: Move) {
+        const movetype = move >> 12;
+
+        return movetype === MoveType.Capture
+            || movetype === MoveType.EPCapture
+            || movetype === MoveType.KnightPromoCapture
+            || movetype === MoveType.BishopPromoCapture
+            || movetype === MoveType.RookPromoCapture
+            || movetype === MoveType.QueenPromoCapture;
+    }
+
     IsSquareAttacked(square: Square, side: Color) {
         const bishops = this.Position.PiecesBB[side][Pieces.Bishop];
         const rooks = this.Position.PiecesBB[side][Pieces.Rook];
@@ -2144,9 +2155,13 @@ class Khepri {
                 scores.push({ move, score: this.Inf });
             }
             // MVV-LVA for captures
-            else if ((move >> 12) === MoveType.Capture) {
+            else if (this.MoveIsCapture(move)) {
                 const movingPiece = this.Position.Squares[move & 0x3f];
-                const capturedPiece = this.Position.Squares[(move & 0xfc0) >> 6];
+                let capturedPiece = this.Position.Squares[(move & 0xfc0) >> 6];
+
+                if (move >> 12 === MoveType.EPCapture) {
+                    capturedPiece = this.Position.Squares[this.Position.SideToMove === Color.White ? ((move & 0xfc0) >> 6) + 8 : ((move & 0xfc0) >> 6) - 8];
+                }
 
                 const score = this.MGPieceValue[capturedPiece.Type] - movingPiece.Type + 10000;
                 scores.push({ move, score });
