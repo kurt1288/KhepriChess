@@ -2003,6 +2003,15 @@ class Khepri {
 
             legalMoves++;
 
+            // Move count based pruning (late move pruning)
+            if (!isPVNode && depth <= 2 && (legalMoves > depth * 3) && !inCheck && !(score > this.Checkmate || score < this.Checkmate)) {
+                const givesCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
+                if (!givesCheck) {
+                    this.UnmakeMove(move);
+                    continue;
+                }
+            }
+
             // Principal Variation Search
             // Move ordering should put the PV move first
             // First do a full search on the PV nodes and then compare other nodes to that score
