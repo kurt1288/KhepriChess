@@ -2203,6 +2203,97 @@ class Khepri {
         return scores.map(({ move }) => move);
     }
 
+    See(move: Move) {
+        const toSquare = (move & 0xfc0) >> 6;
+        const fromSquare = move & 0x3f;
+        const movePiece = this.Position.Squares[fromSquare].Type;
+        let attackedPiece = this.Position.Squares[toSquare]?.Type;
+        let sideToMove = this.Position.SideToMove ^ 1;
+
+        if (!attackedPiece) {
+            return 0;
+        }
+
+        const gain = [];
+        let depth = 0;
+        let attackerBB = this.SetBit(0n, fromSquare);
+        let attdef = this.AttacksTo(toSquare);
+        let movedBB = 0n;
+        const maxXray = this.Position.PiecesBB[Color.White][Pieces.Pawn] | this.Position.PiecesBB[Color.White][Pieces.Bishop]
+                    | this.Position.PiecesBB[Color.White][Pieces.Rook] | this.Position.PiecesBB[Color.White][Pieces.Queen]
+                    | this.Position.PiecesBB[Color.Black][Pieces.Pawn] | this.Position.PiecesBB[Color.Black][Pieces.Bishop]
+                    | this.Position.PiecesBB[Color.Black][Pieces.Rook] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
+
+        gain[depth] = this.MGPieceValue[attackedPiece];
+
+        while (attackerBB) {
+            depth++;
+
+            gain[depth] = this.MGPieceValue[movePiece] - gain[depth - 1];
+
+            if (Math.max(-gain[depth - 1], gain[depth]) < 0) {
+                break;
+            }
+
+            attdef ^= attackerBB;
+            movedBB |= attackerBB;
+
+            if (attackerBB & maxXray) {
+                attdef |= this.ConsiderXRays(toSquare) & ~movedBB;
+            }
+
+            const { bitboard, piece } = this.GetLeastValuablePiece(attdef, sideToMove, attackedPiece);
+            attackerBB = bitboard;
+            attackedPiece = piece;
+            sideToMove ^= 1;
+        }
+
+        while (--depth) {
+            gain[depth - 1] = -Math.max(-gain[depth - 1], gain[depth]);
+        }
+
+        return gain[0];
+    }
+
+    AttacksTo(square: Square) {
+        const pawns = (this.Position.PiecesBB[Color.White][Pieces.Pawn] & this.PawnAttacks[Color.Black][square])
+                        | ((this.Position.PiecesBB[Color.Black][Pieces.Pawn] & this.PawnAttacks[Color.White][square]));
+        const knights = (this.Position.PiecesBB[Color.White][Pieces.Knight] | this.Position.PiecesBB[Color.Black][Pieces.Knight]) & this.KnightAttacks[square];
+        const kings = (this.Position.PiecesBB[Color.White][Pieces.King] | this.Position.PiecesBB[Color.Black][Pieces.King]) & this.KingAttacks[square];
+
+        let bishopQueens = this.Position.PiecesBB[Color.White][Pieces.Bishop] | this.Position.PiecesBB[Color.Black][Pieces.Bishop]
+                        | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
+        bishopQueens &= this.GenerateBishopAttacks(square);
+
+        let rookQueens = this.Position.PiecesBB[Color.White][Pieces.Rook] | this.Position.PiecesBB[Color.Black][Pieces.Rook]
+                        | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
+        rookQueens &= this.GenerateRookAttacks(square);
+
+        return pawns | knights | kings | bishopQueens | rookQueens;
+    }
+
+    ConsiderXRays(square: Square) {
+        let bishopQueens = this.Position.PiecesBB[Color.White][Pieces.Bishop] | this.Position.PiecesBB[Color.Black][Pieces.Bishop]
+                        | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
+        bishopQueens &= this.GenerateBishopAttacks(square);
+
+        let rookQueens = this.Position.PiecesBB[Color.White][Pieces.Rook] | this.Position.PiecesBB[Color.Black][Pieces.Rook]
+                        | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
+        rookQueens &= this.GenerateRookAttacks(square);
+
+        return bishopQueens | rookQueens;
+    }
+
+    GetLeastValuablePiece(board: bigint, side: Color, piece: Pieces) {
+        for (piece = Pieces.Pawn; piece <= Pieces.King; piece++) {
+            let subset = board & this.Position.PiecesBB[side][piece];
+            if (subset) {
+                return { bitboard: subset & -subset, piece };
+            }
+        }
+        return { bitboard: 0n, piece: 0 };
+    }
+
     /***************************
      * 
      * Time Management
