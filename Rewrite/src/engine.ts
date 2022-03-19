@@ -1996,21 +1996,17 @@ class Khepri {
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
 
+            // Move count based pruning (late move pruning)
+            if (!isPVNode && depth <= 2 && (legalMoves > depth * 3) && !inCheck && !(bestScore > this.Checkmate || bestScore < this.Checkmate)) {
+                continue;
+            }
+
             if (!this.MakeMove(move)) {
                 this.UnmakeMove(move);
                 continue;
             }
 
             legalMoves++;
-
-            // Move count based pruning (late move pruning)
-            if (!isPVNode && depth <= 2 && (legalMoves > depth * 3) && !inCheck && !(score > this.Checkmate || score < this.Checkmate)) {
-                const givesCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
-                if (!givesCheck) {
-                    this.UnmakeMove(move);
-                    continue;
-                }
-            }
 
             // Principal Variation Search
             // Move ordering should put the PV move first
