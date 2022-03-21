@@ -62,6 +62,7 @@ interface IPosition {
     HalfMoves: number
     Ply: number
     Hash: bigint
+    PawnHash: bigint
 }
 
 interface Piece {
@@ -74,6 +75,7 @@ interface State {
     EnPassSq: Square
     Captured?: Piece
     Hash: bigint
+    PawnHash: bigint
     HalfMoves: number
 }
 
@@ -98,6 +100,17 @@ interface TTEntry {
 
 interface TTable {
     Entries: TTEntry[]
+    Size: bigint
+}
+
+interface PawnHashEntry {
+    hash: bigint
+    wScore: { mg: number, eg: number }
+    bScore: { mg: number, eg: number }
+}
+
+interface PawnHashTable {
+    Entries: PawnHashEntry[]
     Size: bigint
 }
 
@@ -230,6 +243,7 @@ class Khepri {
         HalfMoves: 0,
         Ply: 0,
         Hash: 0n,
+        PawnHash: 0n,
     }
 
     private readonly PositionHistory: bigint[] = [];
@@ -341,7 +355,9 @@ class Khepri {
         }
 
         // Generate the hashes for the position
-        this.Position.Hash = this.GenerateHashes();
+        const { hash, pawnHash } = this.GenerateHashes();
+        this.Position.Hash = hash;
+        this.Position.PawnHash = pawnHash;
 
         this.PositionHistory.length = 0;
         this.PositionHistory[0] = this.Position.Hash;
@@ -787,6 +803,7 @@ class Khepri {
             EnPassSq: this.Position.EnPassSq,
             Captured: this.Position.Squares[to],
             Hash: this.Position.Hash,
+            PawnHash: this.Position.PawnHash,
             HalfMoves: this.Position.HalfMoves,
         });
 
@@ -1020,6 +1037,7 @@ class Khepri {
 
         // Set hash to previous value
         this.Position.Hash = state.Hash;
+        this.Position.PawnHash = state.PawnHash;
     }
 
     MakeNullMove() {
@@ -1028,6 +1046,7 @@ class Khepri {
             EnPassSq: this.Position.EnPassSq,
             Hash: this.Position.Hash,
             HalfMoves: this.Position.HalfMoves,
+            PawnHash: this.Position.PawnHash,
         });
 
         if (this.Position.EnPassSq !== Square.no_sq) {
@@ -1048,13 +1067,11 @@ class Khepri {
         }
 
         this.Position.CastlingRights = state.CastlingRights;
-        if (state.EnPassSq !== Square.no_sq) {
-            this.Position.EnPassSq = state.EnPassSq;
-            this.Position.Hash ^= this.Zobrist.EnPassant[this.Position.EnPassSq];
-        }
+        this.Position.EnPassSq = state.EnPassSq;
         this.Position.HalfMoves = state.HalfMoves;
         this.Position.SideToMove ^= 1;
-        this.Position.Hash ^= this.Zobrist.SideToMove;
+        this.Position.Hash = state.Hash;
+        this.Position.PawnHash = state.PawnHash;
         this.Position.Ply--;
     }
 
@@ -1063,6 +1080,10 @@ class Khepri {
         this.Position.OccupanciesBB[color] = this.RemoveBit(this.Position.OccupanciesBB[color], square);
         this.Position.Hash ^= this.Zobrist.Pieces[color][piece][square];
         delete this.Position.Squares[square];
+
+        if (piece === Pieces.Pawn) {
+            this.Position.PawnHash ^= this.Zobrist.Pieces[color][Pieces.Pawn][square];
+        }
     }
 
     PlacePiece(piece: Pieces, color: Color.Black | Color.White, square: Square) {
@@ -1070,6 +1091,10 @@ class Khepri {
         this.Position.OccupanciesBB[color] = this.SetBit(this.Position.OccupanciesBB[color], square);
         this.Position.Hash ^= this.Zobrist.Pieces[color][piece][square];
         this.Position.Squares[square] = { Type: piece, Color: color };
+
+        if (piece === Pieces.Pawn) {
+            this.Position.PawnHash ^= this.Zobrist.Pieces[color][Pieces.Pawn][square];
+        }
     }
 
     PrettyPrintMove(move: number) {
@@ -1436,6 +1461,7 @@ class Khepri {
      */
     GenerateHashes() {
         let hash = 0n;
+        let pawnHash = 0n;
 
         // Add the hashes of individual pieces
         for (let square = Square.a8; square <= Square.h1; square++) {
@@ -1443,6 +1469,10 @@ class Khepri {
 
             if (piece) {
                 hash ^= this.Zobrist.Pieces[piece.Color][piece.Type][square];
+
+                if (piece.Type === Pieces.Pawn) {
+                    pawnHash ^= this.Zobrist.Pieces[piece.Color][Pieces.Pawn][square];
+                }
             }
         }
 
@@ -1459,7 +1489,7 @@ class Khepri {
             hash ^= this.Zobrist.SideToMove;
         }
 
-        return hash;
+        return { hash, pawnHash };
     }
 
     /***************************
@@ -1473,6 +1503,10 @@ class Khepri {
         Entries: [],
         Size: 0n,
     }
+    private readonly PawnHashTable: PawnHashTable = {
+        Entries: [],
+        Size: 0n,
+    }
 
     /**
      * Initialize the hash table size
@@ -1482,6 +1516,9 @@ class Khepri {
         this.TranspositionTables.Size = BigInt((size * 1024 * 1024) / 16); // sets the size in bytes
 
         this.TranspositionTables.Entries.length = 0;
+
+        this.PawnHashTable.Size = BigInt((1 * 1024 * 1024) / 16); // 1 MB
+        this.PawnHashTable.Entries.length = 0;
     }
 
     /**
@@ -1784,7 +1821,37 @@ class Khepri {
         let egScores = [0, 0];
         let phase = 24; // (N*4) + (B*4) + (R*4) + (Q*2), where N = 1, B = 1, R = 2, Q = 4
 
-        let board = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
+        let board = (this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black])
+                    & ~(this.Position.PiecesBB[Color.White][Pieces.Pawn] | this.Position.PiecesBB[Color.Black][Pieces.Pawn]);
+
+        const pawnHash = this.PawnHashTable.Entries[Number(this.Position.PawnHash % this.PawnHashTable.Size)];
+
+        if (pawnHash && pawnHash.hash === this.Position.PawnHash) {
+            mgScores[Color.White] += pawnHash.wScore.mg;
+            egScores[Color.White] += pawnHash.wScore.eg;
+            mgScores[Color.Black] += pawnHash.bScore.mg;
+            egScores[Color.Black] += pawnHash.bScore.eg;
+        }
+        else {
+            const pawnEval = this.EvaluatePawns();
+
+            mgScores[Color.White] += pawnEval.mgScores[Color.White];
+            egScores[Color.White] += pawnEval.egScores[Color.White];
+            mgScores[Color.Black] += pawnEval.mgScores[Color.Black];
+            egScores[Color.Black] += pawnEval.egScores[Color.Black];
+
+            this.PawnHashTable.Entries[Number(this.Position.PawnHash % this.PawnHashTable.Size)] = {
+                hash: this.Position.PawnHash,
+                wScore: {
+                    mg: pawnEval.mgScores[Color.White],
+                    eg: pawnEval.egScores[Color.White],
+                },
+                bScore: {
+                    mg: pawnEval.mgScores[Color.Black],
+                    eg: pawnEval.egScores[Color.Black],
+                },
+            }
+        }
 
         while (board) {
             let square = this.GetLS1B(board);
@@ -1799,11 +1866,6 @@ class Khepri {
             phase -= this.PhaseValues[piece.Type];
 
             switch (piece.Type) {
-                case Pieces.Pawn: {
-                    mgScores[piece.Color] += this.PST[0][Pieces.Pawn][square] + this.MGPieceValue[Pieces.Pawn];
-                    egScores[piece.Color] += this.PST[1][Pieces.Pawn][square] + this.EGPieceValue[Pieces.Pawn];
-                    break;
-                }
                 case Pieces.Knight: {
                     mgScores[piece.Color] += this.PST[0][Pieces.Knight][square] + this.MGPieceValue[Pieces.Knight];
                     egScores[piece.Color] += this.PST[1][Pieces.Knight][square] + this.EGPieceValue[Pieces.Knight];
@@ -1838,6 +1900,27 @@ class Khepri {
         const egScore = egScores[this.Position.SideToMove] - egScores[this.Position.SideToMove ^ 1];
 
         return (((mgScore * (256 - phase)) + (egScore * phase)) / 256 | 0);
+    }
+
+    EvaluatePawns() {
+        let mgScores = [0, 0];
+        let egScores = [0, 0];
+        let board = this.Position.PiecesBB[Color.White][Pieces.Pawn] | this.Position.PiecesBB[Color.Black][Pieces.Pawn];
+
+        while (board) {
+            let square = this.GetLS1B(board);
+            board = this.RemoveBit(board, square);
+            const piece = this.Position.Squares[square];
+
+            if (piece.Color === Color.Black) {
+                square ^= 56;
+            }
+
+            mgScores[piece.Color] += this.PST[0][Pieces.Pawn][square] + this.MGPieceValue[Pieces.Pawn];
+            egScores[piece.Color] += this.PST[1][Pieces.Pawn][square] + this.EGPieceValue[Pieces.Pawn];
+        }
+
+        return { mgScores, egScores };
     }
 
     /***************************
