@@ -130,6 +130,8 @@ class Khepri {
         this.InitFileMasks();
         this.InitDiagMasks();
         this.InitAntiDiagMasks();
+        this.InitIsolatedMasks();
+        this.InitPassedMasks();
         this.InitJumperAttacks();
         this.InitBishopAttacks();
         this.InitRookAttacks();
@@ -1127,6 +1129,8 @@ class Khepri {
     private fileMasks: bigint[] = [];
     private diagMasks: bigint[] = [];
     private antiDiagMasks: bigint[] = [];
+    private isolatedMasks: bigint[] = [];
+    private passedMasks = Array(2).fill(0).map(() => Array(64).fill(0))
 
     private readonly notAFile = 18374403900871474942n;
     private readonly notHFile = 9187201950435737471n;
@@ -1158,6 +1162,29 @@ class Khepri {
             const maindia = 0x0102040810204080n;
             const diag = BigInt(7 - (square&7) - (square>>3));
             this.antiDiagMasks[square] = diag >= 0 ? maindia >> diag*8n : maindia << -diag*8n;
+        }
+    }
+
+    InitIsolatedMasks() {
+        for (let square = 0; square < 64; square++) {
+            this.isolatedMasks[square] = this.fileMasks[square] << 1n | this.fileMasks[square] >> 1n;
+        }
+    }
+
+    InitPassedMasks() {
+        for (let square = 0; square < 64; square++) {
+            let mask = this.fileMasks[square] | ((this.fileMasks[square] & this.notAFile) >> 1n) | ((this.fileMasks[square] & this.notHFile) << 1n);
+            this.passedMasks[Color.White][square] = mask;
+            this.passedMasks[Color.Black][square ^ 56] = mask;
+
+            // clear ranks behind squares
+            for (let s = square; s <= Square.h1; s += 8) {
+                this.passedMasks[Color.White][square] &= ~this.rankMasks[s];
+            }
+
+            for (let s = square; s >= Square.a8; s -= 8) {
+                this.passedMasks[Color.Black][square ^ 56] &= ~this.rankMasks[s];
+            }
         }
     }
     
@@ -1815,6 +1842,13 @@ class Khepri {
     ];
 
     private readonly PhaseValues = [0, 1, 1, 2, 4, 0];
+    private readonly MGdoubledPenalty = 2;
+    private readonly EGdoubledPenalty = 15;
+    private readonly MGisolatedPenalty = 20;
+    private readonly EGisolatedPenalty = 2;
+    private readonly fileSemiOpenScore = 7;
+    private readonly MGpassedBonus = [0, 5, 1,  3, 15, 30, 100, 0];
+    private readonly EGpassedBonus = [0, 0, 4, 10, 25, 60, 120, 0];
 
     Evaluate() {
         let mgScores = [0, 0];
@@ -1879,6 +1913,13 @@ class Khepri {
                 case Pieces.Rook: {
                     mgScores[piece.Color] += this.PST[0][Pieces.Rook][square] + this.MGPieceValue[Pieces.Rook];
                     egScores[piece.Color] += this.PST[1][Pieces.Rook][square] + this.EGPieceValue[Pieces.Rook];
+
+                    // semi-open file bonus
+                    if ((this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
+                        mgScores[piece.Color] += this.fileSemiOpenScore;
+                        egScores[piece.Color] += this.fileSemiOpenScore;
+                    }
+
                     break;
                 }
                 case Pieces.Queen: {
@@ -1918,6 +1959,26 @@ class Khepri {
 
             mgScores[piece.Color] += this.PST[0][Pieces.Pawn][square] + this.MGPieceValue[Pieces.Pawn];
             egScores[piece.Color] += this.PST[1][Pieces.Pawn][square] + this.EGPieceValue[Pieces.Pawn];
+
+            // doubled pawns
+            const pawnsOnFile = this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square];
+            if ((pawnsOnFile & (pawnsOnFile - 1n)) !== 0n) {
+                mgScores[piece.Color] -= this.MGdoubledPenalty;
+                egScores[piece.Color] -= this.EGdoubledPenalty;
+            }
+
+            // isolated pawns
+            if ((this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.isolatedMasks[square]) === 0n) {
+                mgScores[piece.Color] -= this.MGisolatedPenalty;
+                egScores[piece.Color] -= this.EGisolatedPenalty;
+            }
+
+            if ((this.passedMasks[piece.Color][square] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n) {
+                // https://www.chessprogramming.org/Ranks
+                const rank = 7 - (square >> 3);
+                mgScores[piece.Color] += this.MGpassedBonus[rank];
+                egScores[piece.Color] += this.EGpassedBonus[rank];
+             }
         }
 
         return { mgScores, egScores };
