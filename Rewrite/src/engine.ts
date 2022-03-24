@@ -2226,6 +2226,9 @@ class Khepri {
 
     Quiescence(alpha: number, beta: number, ply: number) {
         this.search.nodes++;
+        let flag = HashFlag.Alpha;
+        let bestMove = 0;
+        let bestScore = -this.Inf;
 
         // Check whether search time is up every 1000 nodes
         if (this.search.nodes % 1000 === 0) {
@@ -2236,14 +2239,25 @@ class Khepri {
             return 0;
         }
 
-        let standPat = this.Evaluate();
-
-        if (standPat >= beta) {
-            return standPat;
+        // Check the transposition table for matching position and score
+        const { ttScore, ttMove } = this.ProbeTT(this.Position.Hash, 0, ply, alpha, beta);
+        if (ttScore !== this.HashNoMove && ply !== 0) {
+            return ttScore;
         }
 
-        if (standPat > alpha) {
-            alpha = standPat;
+        bestMove = ttMove;
+        bestScore = ttScore;
+
+        if (bestScore === -this.Inf || bestScore === this.HashNoMove) {
+            bestScore = this.Evaluate();
+        }
+
+        if (bestScore >= beta) {
+            return bestScore;
+        }
+
+        if (bestScore > alpha) {
+            alpha = bestScore;
         }
 
         let moves = this.GenerateMoves(true);
@@ -2261,20 +2275,24 @@ class Khepri {
 
             this.UnmakeMove(move);
 
-            if (score > standPat) {
-                standPat = score;
+            if (score > bestScore) {
+                bestScore = score;
             }
 
             if (score >= beta) {
-                return standPat;
+                this.WriteTT(this.Position.Hash, 0, HashFlag.Beta, bestScore, bestMove, ply);
+                return bestScore;
             }
 
             if (score > alpha) {
+                flag = HashFlag.Exact;
                 alpha = score;
             }
         }
 
-        return standPat;
+        this.WriteTT(this.Position.Hash, 0, flag, bestScore, bestMove, ply);
+
+        return bestScore;
     }
 
     IsRepetition() {
