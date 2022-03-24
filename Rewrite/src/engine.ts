@@ -2598,6 +2598,9 @@ class Khepri {
                 moveType = MoveType.QueenPromotion;
             }
         }
+        else if (piece === Pieces.Pawn && Math.abs(from - to) === 16) {
+            moveType = MoveType.DoublePawnPush;
+        }
         // Check if the move was a castling move
         else if ((move === "e1g1" || move === "e8g8") && piece === Pieces.King) {
             moveType = MoveType.KingCastle;
