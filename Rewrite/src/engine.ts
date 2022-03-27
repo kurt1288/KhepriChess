@@ -2073,6 +2073,7 @@ class Khepri {
         let bestMove = 0;
         let flag = HashFlag.Alpha;
         let legalMoves = 0;
+        let canFutilityPrune = false;
         const isPVNode = beta - alpha > 1;
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
         const childPVMoves: PVLine = { moves: [] };
@@ -2112,6 +2113,12 @@ class Khepri {
         let score = ttScore;
 
         const staticEval = this.Evaluate();
+        const futilityValue = staticEval + (90 * depth);
+
+        // Futility pruning
+        if (futilityValue <= alpha && depth <= 3 && !inCheck) {
+            canFutilityPrune = true;
+        }
 
         // Reverse futility pruning
         if (!isPVNode && !inCheck && (staticEval - (90 * depth) >= beta)) {
@@ -2142,6 +2149,11 @@ class Khepri {
 
             // Move count based pruning (late move pruning)
             if (!isPVNode && depth <= 2 && (legalMoves > depth * 3) && !inCheck && !(bestScore > this.Checkmate || bestScore < this.Checkmate)) {
+                continue;
+            }
+
+            // Futility pruning
+            if (canFutilityPrune && legalMoves > 1 && !this.MoveIsCapture(move) && !this.MoveIsPromotion(move)) {
                 continue;
             }
 
