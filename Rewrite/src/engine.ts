@@ -824,6 +824,9 @@ class Khepri {
         switch (moveType) {
             case MoveType.Quiet: {
                 this.PlacePiece(piece.Type, piece.Color, to);
+                if (piece.Type === Pieces.Pawn) {
+                    this.Position.HalfMoves = 0;
+                }
                 break;
             }
             case MoveType.DoublePawnPush: {
@@ -838,6 +841,7 @@ class Khepri {
                 }
 
                 this.Position.Hash ^= this.Zobrist.EnPassant[this.Position.EnPassSq];
+                this.Position.HalfMoves = 0;
 
                 break;
             }
@@ -874,7 +878,6 @@ class Khepri {
                 const captured = this.Position.Squares[to];
                 if (captured) {
                     this.RemovePiece(captured.Type, captured.Color, to);
-                    this.Position.HalfMoves = 0;
                 }
 
                 // Place the promoted piece
@@ -890,6 +893,8 @@ class Khepri {
                 else if (moveType === MoveType.QueenPromotion || moveType === MoveType.QueenPromoCapture) {
                     this.PlacePiece(Pieces.Queen, piece.Color, to);
                 }
+
+                this.Position.HalfMoves = 0;
 
                 break;
             }
