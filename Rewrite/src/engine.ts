@@ -2182,9 +2182,15 @@ class Khepri {
                 score = -this.Negamax(depth - 1, ply + 1, -beta, -alpha, childPVMoves);
             }
             else {
-                score = -this.Negamax(depth - 1, ply + 1, -alpha - 1, -alpha, childPVMoves);
+                let R = 0;
 
-                if (score > alpha && score < beta) {
+                if (depth >= 3 && legalMoves >= 4 && !isPVNode && !inCheck) {
+                    R = Math.log(depth * legalMoves ** 2) * 0.45;
+                }
+
+                score = -this.Negamax(depth - 1 - R, ply + 1, -alpha - 1, -alpha, childPVMoves);
+
+                if (score > alpha) {
                     score = -this.Negamax(depth - 1, ply + 1, -beta, -alpha, childPVMoves);
                 }
             }
