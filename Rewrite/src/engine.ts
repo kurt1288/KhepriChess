@@ -730,10 +730,16 @@ class Khepri {
     }
 
     MoveIsCapture(move: Move) {
+        return this.Position.Squares[(move & 0xfc0) >> 6] !== undefined;
+    }
+
+    MoveIsPromotion(move: Move) {
         const movetype = move >> 12;
 
-        return movetype === MoveType.Capture
-            || movetype === MoveType.EPCapture
+        return movetype === MoveType.KnightPromotion
+            || movetype === MoveType.BishopPromotion
+            || movetype === MoveType.RookPromotion
+            || movetype === MoveType.QueenPromotion
             || movetype === MoveType.KnightPromoCapture
             || movetype === MoveType.BishopPromoCapture
             || movetype === MoveType.RookPromoCapture
