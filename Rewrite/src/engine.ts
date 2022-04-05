@@ -2026,6 +2026,8 @@ class Khepri {
         let beta = this.Inf;
         let score = -this.Inf;
 
+        this.AgeHistory();
+
         // start the timer
         const start = Date.now();
 
@@ -2212,7 +2214,7 @@ class Khepri {
                 pvMoves.moves.push(...childPVMoves.moves);
 
                 // increment history counter if the move is not a capture
-                if (!this.Position.Squares[(move & 0xfc0) >> 6]) {
+                if (!this.MoveIsCapture(move)) {
                     this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] += depth * depth;
                 }
             }
@@ -2221,7 +2223,7 @@ class Khepri {
                 flag = HashFlag.Beta;
 
                 // if the move is not a capture, we should check for a killer move and/or increment the history counter
-                if (!this.Position.Squares[(move & 0xfc0) >> 6]) {
+                if (!this.MoveIsCapture(move)) {
                     // Store the move if it's a killer
                     this.search.killers[1][ply] = this.search.killers[0][ply];
                     this.search.killers[0][ply] = move;
@@ -2332,6 +2334,14 @@ class Khepri {
         }
 
         return false;
+    }
+
+    AgeHistory() {
+        for (let from = Square.a8; from <= Square.h1; from++) {
+            for (let to = Square.a8; to <= Square.h1; to++) {
+                this.search.history[this.Position.SideToMove][from][to] /= 2;
+            }
+        }
     }
 
     /**
