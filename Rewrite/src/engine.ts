@@ -1094,8 +1094,8 @@ class Khepri {
         this.Position.Hash ^= this.Zobrist.Pieces[color][piece][square];
         delete this.Position.Squares[square];
 
-        if (piece === Pieces.Pawn) {
-            this.Position.PawnHash ^= this.Zobrist.Pieces[color][Pieces.Pawn][square];
+        if (piece === Pieces.Pawn || piece === Pieces.King) {
+            this.Position.PawnHash ^= this.Zobrist.Pieces[color][piece][square];
         }
     }
 
@@ -1105,8 +1105,8 @@ class Khepri {
         this.Position.Hash ^= this.Zobrist.Pieces[color][piece][square];
         this.Position.Squares[square] = { Type: piece, Color: color };
 
-        if (piece === Pieces.Pawn) {
-            this.Position.PawnHash ^= this.Zobrist.Pieces[color][Pieces.Pawn][square];
+        if (piece === Pieces.Pawn || piece === Pieces.King) {
+            this.Position.PawnHash ^= this.Zobrist.Pieces[color][piece][square];
         }
     }
 
