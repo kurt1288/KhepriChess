@@ -44,7 +44,7 @@ const browserConfig = {
       extensions: [ '.tsx', '.ts', '.js' ]
    },
    output: {
-      filename: 'kheprichess.js',
+      filename: 'kheprichess_browser.js',
       path: path.resolve(__dirname, 'dist'),
       library: 'Engine',
       libraryTarget: 'var',
@@ -70,7 +70,7 @@ const uciConfig = {
       extensions: [ '.tsx', '.ts', '.js' ]
    },
    output: {
-      filename: 'kheprichessuci.js',
+      filename: 'kheprichess_uci.js',
       path: path.resolve(__dirname, 'dist')
    },
 }
