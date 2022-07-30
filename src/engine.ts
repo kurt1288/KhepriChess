@@ -2079,6 +2079,7 @@ class Khepri {
         }
 
         console.log(`bestmove ${bestmove}`);
+        return bestmove;
     }
 
     Negamax(depth: number, ply: number, alpha: number, beta: number, pvMoves: PVLine, nullMoveAllowed = true) {
