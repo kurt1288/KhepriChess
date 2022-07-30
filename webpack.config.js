@@ -2,10 +2,11 @@ const path = require('path');
 
 const devConfig = {
    name: 'devConfig',
-   entry: './src/dev.ts',
+   entry: './src/browser.ts',
    devtool: 'inline-source-map',
    devServer: {
       contentBase: './dist',
+      port: 9000,
    },
    mode: 'development',
    module: {
@@ -21,14 +22,14 @@ const devConfig = {
       extensions: [ '.tsx', '.ts', '.js' ],
    },
    output: {
-      filename: 'kheprichess.js',
+      filename: 'browser.js',
       path: path.resolve(__dirname, 'dist'),
    },
 }
 
 const browserConfig = {
    name: 'browserConfig',
-   entry: './src/kheprichess.ts',
+   entry: './src/engine.ts',
    mode: 'production',
    module: {
       rules: [
@@ -43,7 +44,7 @@ const browserConfig = {
       extensions: [ '.tsx', '.ts', '.js' ]
    },
    output: {
-      filename: 'kheprichess.js',
+      filename: 'kheprichess_browser.js',
       path: path.resolve(__dirname, 'dist'),
       library: 'Engine',
       libraryTarget: 'var',
@@ -69,7 +70,7 @@ const uciConfig = {
       extensions: [ '.tsx', '.ts', '.js' ]
    },
    output: {
-      filename: 'kheprichessuci.js',
+      filename: 'kheprichess_uci.js',
       path: path.resolve(__dirname, 'dist')
    },
 }

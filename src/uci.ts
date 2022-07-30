@@ -1,9 +1,9 @@
 const readline = require('readline');
-import Engine from "./kheprichess";
+import Khepri from "./engine";
 
 class UciInterface {
    interface;
-   engine = new Engine();
+   engine = new Khepri();
 
    constructor() {
       this.interface = readline.createInterface({
@@ -31,7 +31,7 @@ class UciInterface {
                break;
             }
             case "ucinewgame": {
-               this.engine = new Engine();
+               this.engine = new Khepri();
                break;
             }
             case "position": {
@@ -46,7 +46,7 @@ class UciInterface {
                const hash = parseInt((message.match(/Hash value (\d+)/) || [])[1]) || 0;
 
                if (hash) {
-                  this.engine.InitHashTable(hash);
+                  this.engine.SetTransTableSize(hash);
                }
                break;
             }
