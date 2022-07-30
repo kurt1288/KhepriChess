@@ -5,7 +5,9 @@ const devConfig = {
    entry: './src/browser.ts',
    devtool: 'inline-source-map',
    devServer: {
-      contentBase: './dist',
+      static: {
+         directory: path.join(__dirname, "dist")
+      },
       port: 9000,
    },
    mode: 'development',
