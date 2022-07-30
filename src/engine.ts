@@ -2504,6 +2504,7 @@ class Khepri {
         movestogo: 0,
         startTime: 0,
         stopTime: 0,
+        movetime: -1,
         stop: false,
     }
 
@@ -2512,13 +2513,16 @@ class Khepri {
         this.Timer.stop = false;
 
         // If infinite time, we don't need to set any time limit on searching
-        if (this.Timer.timeleft === -1) {
+        if (this.Timer.timeleft === -1 && this.Timer.movetime === -1) {
             return;
         }
 
         // If there are moves left until the next time control, diving the remaining time equally
         if (this.Timer.movestogo !== 0) {
             searchTime = this.Timer.timeleft / this.Timer.movestogo;
+        }
+        else if (this.Timer.movetime !== -1) {
+            searchTime = this.Timer.movetime;
         }
         else {
             // Games, on average, take approximately 40 moves to complete
@@ -2555,7 +2559,7 @@ class Khepri {
 
     CheckTime() {
         // Never need to stop if there is no limit on search time
-        if (!this.Timer.stop && this.Timer.timeleft === -1) {
+        if (!this.Timer.stop && this.Timer.timeleft === -1 && this.Timer.movetime === -1) {
             return;
         }
 
@@ -2675,6 +2679,7 @@ class Khepri {
         let timeleft = -1; // negative value indicates infinite time
         let increment = 0;
         let movestogo = 0;
+        let movetime = -1; // -1 is infinite
         let depth = this.MaxPly;
 
         for (let i = 0; i < commands.length; i++) {
@@ -2693,6 +2698,9 @@ class Khepri {
                 // set depth to UCI value, unless it is greater than the max ply
                 depth = Math.min(parseInt(commands[i + 1]), this.MaxPly);
             }
+            else if (command === "movetime") {
+                movetime = parseInt(commands[i + 1]);
+            }
         }
 
         // Set the engine's timer values to values from the UCI command
@@ -2700,6 +2708,7 @@ class Khepri {
         this.Timer.increment = increment;
         this.Timer.depth = depth;
         this.Timer.movestogo = movestogo;
+        this.Timer.movetime = movetime;
 
         return this.Search(depth);
     }
