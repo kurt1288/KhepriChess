@@ -2047,27 +2047,28 @@ class Khepri {
         // The main iterative deepening search loop
         for (let depth = 1; depth <= targetDepth; depth++) {            
             pv.moves.length = 0;
-            
-            score = this.Negamax(depth, 0, alpha, beta, pv);
+
+            let margin = depth >= 4 ? 25 : this.Inf;
+
+            // Aspiration window
+            while (!this.Timer.stop) {
+                alpha = Math.max(score - margin, -this.Inf);
+                beta = Math.min(score + margin, this.Inf);
+
+                score = this.Negamax(depth, 0, alpha, beta, pv);
+
+                // if the score is within the window, we don't need to widen and research
+                if (score > alpha && score < beta)
+                    break;
+
+                margin *= 3;
+            }
+
             const end = Date.now();
 
             if (this.Timer.stop) {
                 break;
             }
-
-            if (score <= alpha) {
-                alpha = score - 150;
-                depth--;
-                continue;
-            }
-            else if (score >= beta) {
-                beta = score + 150;
-                depth--;
-                continue;
-            }
-
-            alpha = score - 50;
-            beta = score + 50;
 
             bestmove = this.PrettyPrintMove(pv.moves[0]);
 
