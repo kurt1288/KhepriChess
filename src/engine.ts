@@ -1857,7 +1857,8 @@ class Khepri {
     private readonly EGdoubledPenalty = 15;
     private readonly MGisolatedPenalty = 20;
     private readonly EGisolatedPenalty = 2;
-    private readonly fileSemiOpenScore = 7;
+    private readonly MGfileSemiOpenScore = 10;
+    private readonly MGfileOpenScore = 25;
     private readonly MGpassedBonus = [0, 5, 1,  3, 15, 30, 100, 0];
     private readonly EGpassedBonus = [0, 0, 4, 10, 25, 60, 120, 0];
 
@@ -1925,10 +1926,14 @@ class Khepri {
                     mgScores[piece.Color] += this.PST[0][Pieces.Rook][square] + this.MGPieceValue[Pieces.Rook];
                     egScores[piece.Color] += this.PST[1][Pieces.Rook][square] + this.EGPieceValue[Pieces.Rook];
 
+                    // open file bonus
+                    if (((this.Position.PiecesBB[piece.Color][Pieces.Pawn] | this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) & this.fileMasks[square]) === 0n) {
+                        mgScores[piece.Color] += this.MGfileOpenScore;
+                    }
+
                     // semi-open file bonus
-                    if ((this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
-                        mgScores[piece.Color] += this.fileSemiOpenScore;
-                        egScores[piece.Color] += this.fileSemiOpenScore;
+                    if ((this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn] & this.fileMasks[square]) && (this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
+                        mgScores[piece.Color] += this.MGfileSemiOpenScore;
                     }
 
                     break;
