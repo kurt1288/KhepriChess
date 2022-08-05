@@ -7,27 +7,27 @@ A UCI-compatible chess engine written in Typescript that uses Javascript's nativ
 
 ## Install
 
-You can download builds from the [Releases page](https://github.com/kurt1288/KhepriChess/releases). Included are files for use in a browser (kheprichess.js) and use in a UCI-supporting application (kheprichessuci.js).
+You can download builds from the [Releases page](https://github.com/kurt1288/KhepriChess/releases). Included are files for use in a browser (kheprichess_browser.js) and use in a UCI-supporting application (kheprichess_uci.js).
 
 ## Usage
 
 1. In a browser:
 
    ```html
-   <script src="kheprichess.js" />
+   <script src="kheprichess_browser.js" />
    ```
    or
 
    ```js
-   import Engine from 'kheprichess';
+   import Engine from 'kheprichess_browser';
    ```
 
 2. In a GUI that supports the UCI protocol:
 
    1. Download and install [nodejs](https://nodejs.org/en/).
    2. To add the engine to your GUI:
-      * In Arena, the command line should be the path to the nodejs executable. In the "Command Line Parameters" field, specify the path to the `kheprichessuci.js` file.
-      * In Cute Chess, the command field should look something like `<Nodejs directory>\node.exe "<Khepri directory>\kheprichessuci.js"`
+      * In Arena, the command line should be the path to the nodejs executable. In the "Command Line Parameters" field, specify the path to the `kheprichess_uci.js` file.
+      * In Cute Chess, the command field should look something like `<Nodejs directory>\node.exe "<Khepri directory>\kheprichess_uci.js"`
 
 Please note there is no exposed move validation, piece placement, check detection, etc. like you would find in the [chess.js](https://github.com/jhlywa/chess.js) library (which does those things, but doesn't have the AI part). As such, the engine will attempt to make any move you tell it to, even an invalid one.
 
