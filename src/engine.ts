@@ -1862,6 +1862,7 @@ class Khepri {
     private readonly MGpassedBonus = [0, 5, 1,  3, 15, 30, 100, 0];
     private readonly EGpassedBonus = [0, 0, 4, 10, 25, 60, 120, 0];
 
+    private readonly MGrookQueenFileBonus = 7;
     Evaluate() {
         let mgScores = [0, 0];
         let egScores = [0, 0];
@@ -1936,6 +1937,10 @@ class Khepri {
                         mgScores[piece.Color] += this.MGfileSemiOpenScore;
                     }
 
+                    // Bonus if rook is on the same file as opponent's queen
+                    if (this.fileMasks[square] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Queen]) {
+                        mgScores[piece.Color] += this.MGrookQueenFileBonus;
+                    }
                     break;
                 }
                 case Pieces.Queen: {
