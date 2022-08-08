@@ -276,6 +276,7 @@ class Khepri {
         ];
         this.Position.OccupanciesBB = [0n, 0n];
         this.Position.CastlingRights = 0;
+        this.Position.Squares = [];
 
         const pieces = fen.split(" ")[0].split("");
 
