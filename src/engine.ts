@@ -1,4 +1,4 @@
-enum Square {
+export enum Square {
     a8, b8, c8, d8, e8, f8, g8, h8,
     a7, b7, c7, d7, e7, f7, g7, h7,
     a6, b6, c6, d6, e6, f6, g6, h6,
@@ -13,13 +13,13 @@ enum Pieces {
     Pawn, Knight, Bishop, Rook, Queen, King,
 }
 
-enum Color {
+export enum Color {
     White,
     Black,
     Both,
 }
 
-enum CastlingRights {
+export enum CastlingRights {
     WhiteKingside = 1,
     WhiteQueenside,
     BlackKingside = 4,
@@ -52,7 +52,7 @@ enum HashFlag {
 
 type Move = number;
 
-interface IPosition {
+export interface IPosition {
     PiecesBB: bigint[][]
     OccupanciesBB: [bigint, bigint]
     Squares: Piece[]
@@ -235,7 +235,7 @@ class Khepri {
         56n, 57n, 58n, 59n, 60n, 61n, 62n, 63n, 64n,
     ]
 
-    private readonly Position: IPosition = {
+    readonly Position: IPosition = {
         PiecesBB: [],
         OccupanciesBB: [0n, 0n],
         Squares: [],
@@ -277,6 +277,7 @@ class Khepri {
         this.Position.OccupanciesBB = [0n, 0n];
         this.Position.CastlingRights = 0;
         this.Position.Squares = [];
+        this.Position.EnPassSq = Square.no_sq;
 
         const pieces = fen.split(" ")[0].split("");
 
@@ -331,11 +332,12 @@ class Khepri {
             const files = 'abcdefgh';
             const file = files.indexOf(enpassant.split('')[0]);
             const rank = 8 - parseInt(enpassant[1], 10);
+            const enPSquare = rank * 8 + file;
 
-            this.Position.EnPassSq = rank * 8 + file;
-        }
-        else {
-            this.Position.EnPassSq = Square.no_sq;
+            // Only set the en passant square if an opponent pawn can make that move
+            if (this.PawnAttacks[this.Position.SideToMove ^ 1][enPSquare] & this.Position.PiecesBB[this.Position.SideToMove][Pieces.Pawn]) {
+                this.Position.EnPassSq = enPSquare;
+            }
         }
 
         // Set the game ply. If ply is not set in FEN, set it to 0
