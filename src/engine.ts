@@ -1609,7 +1609,7 @@ class Khepri {
         let newScore = this.HashNoMove;
 
         if (!entry || entry.Hash !== hash) {
-            return { ttScore: newScore, ttMove: 0};
+            return { ttScore: newScore, ttMove: 0 };
         }
 
         if (entry.Depth >= depth) {
@@ -2098,7 +2098,6 @@ class Khepri {
 
     Negamax(depth: number, ply: number, alpha: number, beta: number, pvMoves: PVLine, nullMoveAllowed = true) {
         let bestScore = -this.Inf;
-        let bestMove = 0;
         let flag = HashFlag.Alpha;
         let legalMoves = 0;
         let canFutilityPrune = false;
@@ -2137,8 +2136,7 @@ class Khepri {
             return ttScore;
         }
 
-        bestMove = ttMove;
-        let score = ttScore;
+        let bestMove = ttMove;
 
         const staticEval = this.Evaluate();
         const futilityValue = staticEval + (90 * depth);
@@ -2158,7 +2156,7 @@ class Khepri {
             this.MakeNullMove();
 
             const R = 1 + Math.floor(depth / 3);
-            score = -this.Negamax(depth - 1 - R, ply + 1, -beta, 1 - beta, childPVMoves, false);
+            let score = -this.Negamax(depth - 1 - R, ply + 1, -beta, 1 - beta, childPVMoves, false);
 
             this.UnmakeNullMove();
 
@@ -2191,6 +2189,8 @@ class Khepri {
             }
 
             legalMoves++;
+
+            let score = 0;
 
             // Principal Variation Search
             // Move ordering should put the PV move first
@@ -2273,8 +2273,6 @@ class Khepri {
     Quiescence(alpha: number, beta: number, ply: number) {
         this.search.nodes++;
         let flag = HashFlag.Alpha;
-        let bestMove = 0;
-        let bestScore = -this.Inf;
 
         // Check whether search time is up every 1000 nodes
         if (this.search.nodes % 1000 === 0) {
@@ -2291,10 +2289,10 @@ class Khepri {
             return ttScore;
         }
 
-        bestMove = ttMove;
-        bestScore = ttScore;
+        let bestMove = ttMove;
+        let bestScore = ttScore;
 
-        if (bestScore === -this.Inf || bestScore === this.HashNoMove) {
+        if (bestScore === this.HashNoMove) {
             bestScore = this.Evaluate();
         }
 
@@ -2307,7 +2305,7 @@ class Khepri {
         }
 
         let moves = this.GenerateMoves(true);
-        moves = this.SortMoves(moves, this.HashNoMove, ply);
+        moves = this.SortMoves(moves, bestMove, ply);
 
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
@@ -2323,6 +2321,7 @@ class Khepri {
 
             if (score > bestScore) {
                 bestScore = score;
+                bestMove = move;
             }
 
             if (score >= beta) {
