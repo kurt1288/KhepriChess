@@ -140,7 +140,7 @@ class Khepri {
     }
 
     readonly name = "KhepriChess";
-    readonly version = "2.0.0";
+    readonly version = "2.1.0";
     readonly author = "Kurt Peters";
 
     static readonly positions = {
