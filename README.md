@@ -1,46 +1,48 @@
 # KhepriChess 𓆣
 
-A UCI-compatible chess engine written in Typescript that uses Javascript's native 64-bit integer support ([bigint](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/BigInt)) for things like bitboards and hashing.
+KhepriChess is a JavaScript (written in TypeScript) chess engine. It uses native 64-bit integers for bitboard representation.
 
 ### Play against KhepriChess!
 [Browser example](https://kurt1288.github.io/KhepriChess/examples/khepri.html)
 
-## Install
-
-You can download builds from the [Releases page](https://github.com/kurt1288/KhepriChess/releases). Included are files for use in a browser (kheprichess_browser.js) and use in a UCI-supporting application (kheprichess_uci.js).
+[Lichess](https://lichess.org/@/KhepriChess)
 
 ## Usage
 
-1. In a browser:
+KhepriChess can be used in both a browser or with a GUI the can run UCI engines. Please make sure you use the appropriately named file for the necessary application.
 
-   ```html
-   <script src="kheprichess_browser.js" />
-   ```
-   or
+### Browsers
 
-   ```js
-   import Engine from 'kheprichess_browser';
-   ```
+Use the `kheprichess_browser.js" file. Add the file to your HTML page like you would any other JS file, either
 
-2. In a GUI that supports the UCI protocol:
+```js
+<script src="kheprichess_browser.js" />
+```
+or
+```js
+import Engine from 'kheprichess_browser';
+```
 
-   1. Download and install [nodejs](https://nodejs.org/en/).
-   2. To add the engine to your GUI:
-      * In Arena, the command line should be the path to the nodejs executable. In the "Command Line Parameters" field, specify the path to the `kheprichess_uci.js` file.
-      * In Cute Chess, the command field should look something like `<Nodejs directory>\node.exe "<Khepri directory>\kheprichess_uci.js"`
+For a more in-depth example of using it in the browser, please see the [the example page](https://kurt1288.github.io/KhepriChess/examples/khepri.html).
 
-Please note there is no exposed move validation, piece placement, check detection, etc. like you would find in the [chess.js](https://github.com/jhlywa/chess.js) library (which does those things, but doesn't have the AI part). As such, the engine will attempt to make any move you tell it to, even an invalid one.
+### UCI
 
-For an example of integrating KhepriChess with validation from chess.js, please see [the example](https://kurt1288.github.io/KhepriChess/examples/khepri.html).
+Nodejs is required. Please download the latest version (or the LTS version) [here](https://nodejs.org/en/).
 
-## Api
+Once node is installed, you can add KhepriChess to a GUI program, like Arena or Cute Chess.
 
-Found [here](docs/api.md).
+* In [Arena](http://www.playwitharena.de/), the command line should be the path to the nodejs executable. In the "Command Line Parameters" field, specify the path to the kheprichess_uci.js file.
 
-## Improvements/To Do
+* In [Cute Chess](https://cutechess.com/), the command field should look something like `<Nodejs directory>\node.exe "<Khepri directory>\kheprichess_uci.js"`.
 
-A generalized list of things that I'd like to do can be found [here](https://github.com/kurt1288/KhepriChess/wiki/Improvements).
+## Polyglot
+
+KhepriChess supports the use of a polyglot opening book. Simply place a book file with the name of `khepri_polyglot.bin` in the same directory that the JS file is running from and it will automatically detect and load it.
+
+Please note: The browser version does not support polyglot.
 
 ## Special Thanks
 
 A huge thanks to Maksim Korzh, aka Code Monkey King, and his [video tutorial series](https://www.youtube.com/playlist?list=PLmN0neTso3Jxh8ZIylk74JpwfiWNI76Cs) on bitboards. Without it, I never would have gotten anywhere.
+
+Also a huge thanks to everyone at the [talkchess](https://talkchess.com/forum3/index.php) forums for providing value support and answers to my terrible questions.
