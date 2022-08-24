@@ -2138,32 +2138,33 @@ class Khepri {
 
         let bestMove = ttMove;
 
-        const staticEval = this.Evaluate();
-        const futilityValue = staticEval + (90 * depth);
+        if (!inCheck && !isPVNode) {
+            const staticEval = this.Evaluate();
 
-        // Futility pruning
-        if (futilityValue <= alpha && depth <= 3 && !inCheck) {
-            canFutilityPrune = true;
-        }
+            // Reverse futility pruning (static null move pruning)
+            if (staticEval - (90 * depth) >= beta) {
+                return staticEval - (90 * depth);
+            }
 
-        // Reverse futility pruning
-        if (!isPVNode && !inCheck && (staticEval - (90 * depth) >= beta)) {
-            return staticEval - (90 * depth);
-        }
+            // Futility pruning
+            if (depth <= 2 && staticEval + (90 * depth) <= alpha) {
+                canFutilityPrune = true;
+            }
 
-        // Null move pruning
-        if (nullMoveAllowed && !inCheck && depth >= 3) {
-            this.MakeNullMove();
+            // Null move pruning
+            if (nullMoveAllowed && depth >= 2 && staticEval >= beta) {
+                this.MakeNullMove();
 
-            const R = 1 + Math.floor(depth / 3);
-            let score = -this.Negamax(depth - 1 - R, ply + 1, -beta, 1 - beta, childPVMoves, false);
+                const R = 3 + Math.floor(depth / 5);
+                let score = -this.Negamax(depth - 1 - R, ply + 1, -beta, 1 - beta, childPVMoves, false);
 
-            this.UnmakeNullMove();
+                this.UnmakeNullMove();
 
-            childPVMoves.moves.length = 0;
+                childPVMoves.moves.length = 0;
 
-            if (score >= beta) {
-                return beta;
+                if (score >= beta) {
+                    return beta;
+                }
             }
         }
 
@@ -2172,11 +2173,6 @@ class Khepri {
 
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
-
-            // Move count based pruning (late move pruning)
-            if (!isPVNode && depth <= 2 && (legalMoves > depth * 3) && !inCheck && !(bestScore > this.Checkmate || bestScore < this.Checkmate)) {
-                continue;
-            }
 
             // Futility pruning
             if (canFutilityPrune && legalMoves > 1 && !this.MoveIsCapture(move) && !this.MoveIsPromotion(move)) {
