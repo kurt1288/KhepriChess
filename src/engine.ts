@@ -1864,8 +1864,8 @@ class Khepri {
     private readonly MGfileOpenScore = 25;
     private readonly MGpassedBonus = [0, 5, 1,  3, 15, 30, 100, 0];
     private readonly EGpassedBonus = [0, 0, 4, 10, 25, 60, 120, 0];
-
     private readonly MGrookQueenFileBonus = 7;
+
     Evaluate() {
         let mgScores = [0, 0];
         let egScores = [0, 0];
@@ -1905,6 +1905,7 @@ class Khepri {
 
         while (board) {
             let square = this.GetLS1B(board);
+            let actualSquare = square;
             board = this.RemoveBit(board, square);
             const piece = this.Position.Squares[square];
 
@@ -1919,6 +1920,14 @@ class Khepri {
                 case Pieces.Knight: {
                     mgScores[piece.Color] += this.PST[0][Pieces.Knight][square] + this.MGPieceValue[Pieces.Knight];
                     egScores[piece.Color] += this.PST[1][Pieces.Knight][square] + this.EGPieceValue[Pieces.Knight];
+
+                    // Knight outposts
+                    if (this.PawnAttacks[piece.Color ^ 1][actualSquare] & this.Position.PiecesBB[piece.Color][Pieces.Pawn]
+                        && (this.PawnAttacks[piece.Color][actualSquare] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n) {
+                        mgScores[piece.Color] += 15;
+                        egScores[piece.Color] += 5;
+                    }
+
                     break;
                 }
                 case Pieces.Bishop: {
