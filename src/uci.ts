@@ -1,8 +1,10 @@
 const readline = require('readline');
 import Khepri from "./engine";
+import Polyglot, { entry } from "./polyglot";
 
 class UciInterface {
    interface;
+   openingBook: Map<bigint, entry> | null = null;
    engine = new Khepri();
 
    constructor() {
@@ -32,6 +34,14 @@ class UciInterface {
             }
             case "ucinewgame": {
                this.engine = new Khepri();
+
+               const polyglot = new Polyglot();
+               const entries = polyglot.TryLoad();
+
+               if (entries) {
+                  this.openingBook = entries;
+               }
+
                break;
             }
             case "position": {
@@ -39,6 +49,16 @@ class UciInterface {
                break;
             }
             case "go": {
+               if (this.openingBook) {
+                  const hash = Polyglot.PolyglotHash(this.engine.Position);
+                  const openings = this.openingBook.get(hash);
+
+                  if (openings !== undefined) {
+                     console.log(`bestmove ${openings.move}`);
+                     return;
+                  }
+               }
+
                this.engine.ParseUCIGo(message);
                break;
             }

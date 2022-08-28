@@ -1,4 +1,4 @@
-enum Square {
+export enum Square {
     a8, b8, c8, d8, e8, f8, g8, h8,
     a7, b7, c7, d7, e7, f7, g7, h7,
     a6, b6, c6, d6, e6, f6, g6, h6,
@@ -13,13 +13,13 @@ enum Pieces {
     Pawn, Knight, Bishop, Rook, Queen, King,
 }
 
-enum Color {
+export enum Color {
     White,
     Black,
     Both,
 }
 
-enum CastlingRights {
+export enum CastlingRights {
     WhiteKingside = 1,
     WhiteQueenside,
     BlackKingside = 4,
@@ -52,7 +52,7 @@ enum HashFlag {
 
 type Move = number;
 
-interface IPosition {
+export interface IPosition {
     PiecesBB: bigint[][]
     OccupanciesBB: [bigint, bigint]
     Squares: Piece[]
@@ -140,7 +140,7 @@ class Khepri {
     }
 
     readonly name = "KhepriChess";
-    readonly version = "2.0.0";
+    readonly version = "2.1.0";
     readonly author = "Kurt Peters";
 
     static readonly positions = {
@@ -235,7 +235,7 @@ class Khepri {
         56n, 57n, 58n, 59n, 60n, 61n, 62n, 63n, 64n,
     ]
 
-    private readonly Position: IPosition = {
+    readonly Position: IPosition = {
         PiecesBB: [],
         OccupanciesBB: [0n, 0n],
         Squares: [],
@@ -276,6 +276,8 @@ class Khepri {
         ];
         this.Position.OccupanciesBB = [0n, 0n];
         this.Position.CastlingRights = 0;
+        this.Position.Squares = [];
+        this.Position.EnPassSq = Square.no_sq;
 
         const pieces = fen.split(" ")[0].split("");
 
@@ -330,11 +332,12 @@ class Khepri {
             const files = 'abcdefgh';
             const file = files.indexOf(enpassant.split('')[0]);
             const rank = 8 - parseInt(enpassant[1], 10);
+            const enPSquare = rank * 8 + file;
 
-            this.Position.EnPassSq = rank * 8 + file;
-        }
-        else {
-            this.Position.EnPassSq = Square.no_sq;
+            // Only set the en passant square if an opponent pawn can make that move
+            if (this.PawnAttacks[this.Position.SideToMove ^ 1][enPSquare] & this.Position.PiecesBB[this.Position.SideToMove][Pieces.Pawn]) {
+                this.Position.EnPassSq = enPSquare;
+            }
         }
 
         // Set the game ply. If ply is not set in FEN, set it to 0
@@ -1606,7 +1609,7 @@ class Khepri {
         let newScore = this.HashNoMove;
 
         if (!entry || entry.Hash !== hash) {
-            return { ttScore: newScore, ttMove: 0};
+            return { ttScore: newScore, ttMove: 0 };
         }
 
         if (entry.Depth >= depth) {
@@ -1857,10 +1860,12 @@ class Khepri {
     private readonly EGdoubledPenalty = 15;
     private readonly MGisolatedPenalty = 20;
     private readonly EGisolatedPenalty = 2;
-    private readonly fileSemiOpenScore = 7;
+    private readonly MGfileSemiOpenScore = 10;
+    private readonly MGfileOpenScore = 25;
     private readonly MGpassedBonus = [0, 5, 1,  3, 15, 30, 100, 0];
     private readonly EGpassedBonus = [0, 0, 4, 10, 25, 60, 120, 0];
 
+    private readonly MGrookQueenFileBonus = 7;
     Evaluate() {
         let mgScores = [0, 0];
         let egScores = [0, 0];
@@ -1925,12 +1930,20 @@ class Khepri {
                     mgScores[piece.Color] += this.PST[0][Pieces.Rook][square] + this.MGPieceValue[Pieces.Rook];
                     egScores[piece.Color] += this.PST[1][Pieces.Rook][square] + this.EGPieceValue[Pieces.Rook];
 
-                    // semi-open file bonus
-                    if ((this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
-                        mgScores[piece.Color] += this.fileSemiOpenScore;
-                        egScores[piece.Color] += this.fileSemiOpenScore;
+                    // open file bonus
+                    if (((this.Position.PiecesBB[piece.Color][Pieces.Pawn] | this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) & this.fileMasks[square]) === 0n) {
+                        mgScores[piece.Color] += this.MGfileOpenScore;
                     }
 
+                    // semi-open file bonus
+                    if ((this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn] & this.fileMasks[square]) && (this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
+                        mgScores[piece.Color] += this.MGfileSemiOpenScore;
+                    }
+
+                    // Bonus if rook is on the same file as opponent's queen
+                    if (this.fileMasks[square] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Queen]) {
+                        mgScores[piece.Color] += this.MGrookQueenFileBonus;
+                    }
                     break;
                 }
                 case Pieces.Queen: {
@@ -2047,31 +2060,32 @@ class Khepri {
         // The main iterative deepening search loop
         for (let depth = 1; depth <= targetDepth; depth++) {            
             pv.moves.length = 0;
-            
-            score = this.Negamax(depth, 0, alpha, beta, pv);
+
+            let margin = depth >= 4 ? 25 : this.Inf;
+
+            // Aspiration window
+            while (!this.Timer.stop) {
+                alpha = Math.max(score - margin, -this.Inf);
+                beta = Math.min(score + margin, this.Inf);
+
+                score = this.Negamax(depth, 0, alpha, beta, pv);
+
+                // if the score is within the window, we don't need to widen and research
+                if (score > alpha && score < beta)
+                    break;
+
+                margin *= 3;
+            }
+
             const end = Date.now();
 
             if (this.Timer.stop) {
                 break;
             }
 
-            if (score <= alpha) {
-                alpha = score - 150;
-                depth--;
-                continue;
-            }
-            else if (score >= beta) {
-                beta = score + 150;
-                depth--;
-                continue;
-            }
-
-            alpha = score - 50;
-            beta = score + 50;
-
             bestmove = this.PrettyPrintMove(pv.moves[0]);
 
-            console.log(`info depth ${depth} score ${getScore()} nodes ${this.search.nodes} nps ${Math.round((this.search.nodes / (end - start)) * 1000)} time ${end - start} pv ${pv.moves.map(x => this.PrettyPrintMove(x)).join(" ")}`);
+            console.log(`info depth ${depth} score ${getScore()} nodes ${this.search.nodes} time ${end - start} pv ${pv.moves.map(x => this.PrettyPrintMove(x)).join(" ")}`);
 
             if (score > this.Checkmate || score < -this.Checkmate) {
                 break;
@@ -2084,7 +2098,6 @@ class Khepri {
 
     Negamax(depth: number, ply: number, alpha: number, beta: number, pvMoves: PVLine, nullMoveAllowed = true) {
         let bestScore = -this.Inf;
-        let bestMove = 0;
         let flag = HashFlag.Alpha;
         let legalMoves = 0;
         let canFutilityPrune = false;
@@ -2123,8 +2136,7 @@ class Khepri {
             return ttScore;
         }
 
-        bestMove = ttMove;
-        let score = ttScore;
+        let bestMove = ttMove;
 
         const staticEval = this.Evaluate();
         const futilityValue = staticEval + (90 * depth);
@@ -2144,7 +2156,7 @@ class Khepri {
             this.MakeNullMove();
 
             const R = 1 + Math.floor(depth / 3);
-            score = -this.Negamax(depth - 1 - R, ply + 1, -beta, 1 - beta, childPVMoves, false);
+            let score = -this.Negamax(depth - 1 - R, ply + 1, -beta, 1 - beta, childPVMoves, false);
 
             this.UnmakeNullMove();
 
@@ -2177,6 +2189,8 @@ class Khepri {
             }
 
             legalMoves++;
+
+            let score = 0;
 
             // Principal Variation Search
             // Move ordering should put the PV move first
@@ -2259,8 +2273,6 @@ class Khepri {
     Quiescence(alpha: number, beta: number, ply: number) {
         this.search.nodes++;
         let flag = HashFlag.Alpha;
-        let bestMove = 0;
-        let bestScore = -this.Inf;
 
         // Check whether search time is up every 1000 nodes
         if (this.search.nodes % 1000 === 0) {
@@ -2277,10 +2289,10 @@ class Khepri {
             return ttScore;
         }
 
-        bestMove = ttMove;
-        bestScore = ttScore;
+        let bestMove = ttMove;
+        let bestScore = ttScore;
 
-        if (bestScore === -this.Inf || bestScore === this.HashNoMove) {
+        if (bestScore === this.HashNoMove) {
             bestScore = this.Evaluate();
         }
 
@@ -2293,7 +2305,7 @@ class Khepri {
         }
 
         let moves = this.GenerateMoves(true);
-        moves = this.SortMoves(moves, this.HashNoMove, ply);
+        moves = this.SortMoves(moves, bestMove, ply);
 
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
@@ -2309,6 +2321,7 @@ class Khepri {
 
             if (score > bestScore) {
                 bestScore = score;
+                bestMove = move;
             }
 
             if (score >= beta) {
