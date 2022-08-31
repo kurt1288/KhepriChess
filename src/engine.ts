@@ -9,7 +9,7 @@ export enum Square {
     a1, b1, c1, d1, e1, f1, g1, h1, no_sq,
 }
 
-enum Pieces {
+export enum Pieces {
     Pawn, Knight, Bishop, Rook, Queen, King,
 }
 
@@ -63,6 +63,7 @@ export interface IPosition {
     Ply: number
     Hash: bigint
     PawnHash: bigint
+    Phase: number
 }
 
 interface Piece {
@@ -246,6 +247,7 @@ class Khepri {
         Ply: 0,
         Hash: 0n,
         PawnHash: 0n,
+        Phase: 0,
     }
 
     private readonly PositionHistory: bigint[] = [];
@@ -278,6 +280,7 @@ class Khepri {
         this.Position.CastlingRights = 0;
         this.Position.Squares = [];
         this.Position.EnPassSq = Square.no_sq;
+        this.Position.Phase = this.PhaseTotal;
 
         const pieces = fen.split(" ")[0].split("");
 
@@ -293,8 +296,7 @@ class Khepri {
                 case "P": case "N": case "B": case "R": case "Q": case "K": {
                     const piece: Piece = this.CharToPiece[char];
 
-                    this.Position.PiecesBB[piece.Color][piece.Type] = this.SetBit(this.Position.PiecesBB[piece.Color][piece.Type], square);
-                    this.Position.Squares[square] = piece;
+                    this.PlacePieceNoHash(piece.Type, piece.Color, square);
                     square++;
                     break;
                 }
@@ -350,14 +352,6 @@ class Khepri {
 
         // Set the halfmove clock
         this.Position.HalfMoves = parseInt(fen.split(' ')[4]) || 0;
-
-        // Generate occupancy bitboards
-        for (const bb of this.Position.PiecesBB[Color.White]) {
-            this.Position.OccupanciesBB[Color.White] |= bb;
-        }
-        for (const bb of this.Position.PiecesBB[Color.Black]) {
-            this.Position.OccupanciesBB[Color.Black] |= bb;
-        }
 
         // Generate the hashes for the position
         const { hash, pawnHash } = this.GenerateHashes();
@@ -979,30 +973,30 @@ class Khepri {
         const piece = this.Position.Squares[to];
 
         // Put the piece back on its original square
-        this.PlacePiece(piece.Type, piece.Color, from);
+        this.PlacePieceNoHash(piece.Type, piece.Color, from);
 
         switch (moveType) {
             case MoveType.Quiet: {
-                this.RemovePiece(piece.Type, piece.Color, to);
+                this.RemovePieceNoHash(piece.Type, piece.Color, to);
                 break;
             }
             case MoveType.DoublePawnPush: {
-                this.RemovePiece(piece.Type, piece.Color, to);
+                this.RemovePieceNoHash(piece.Type, piece.Color, to);
                 break;
             }
             case MoveType.Capture: {
                 let captured = state.Captured as Piece;
 
-                this.RemovePiece(piece.Type, piece.Color, to);
-                this.PlacePiece(captured.Type, captured.Color, to);
+                this.RemovePieceNoHash(piece.Type, piece.Color, to);
+                this.PlacePieceNoHash(captured.Type, captured.Color, to);
                 break;
             }
             case MoveType.EPCapture: {
                 let captured = state.Captured as Piece;
 
-                this.RemovePiece(piece.Type, piece.Color, to);
+                this.RemovePieceNoHash(piece.Type, piece.Color, to);
                 const epSquare = this.Position.SideToMove === Color.White ? to + 8 : to - 8;
-                this.PlacePiece(captured.Type, captured.Color, epSquare);
+                this.PlacePieceNoHash(captured.Type, captured.Color, epSquare);
                 break;
             }
             case MoveType.KnightPromotion:
@@ -1013,39 +1007,39 @@ class Khepri {
             case MoveType.BishopPromoCapture:
             case MoveType.RookPromoCapture:
             case MoveType.QueenPromoCapture: {
-                this.RemovePiece(piece.Type, piece.Color, to);
+                this.RemovePieceNoHash(piece.Type, piece.Color, to);
                 // Have to remove the promoted piece and replace it with a pawn
-                this.RemovePiece(piece.Type, piece.Color, from);
-                this.PlacePiece(Pieces.Pawn, piece.Color, from);
+                this.RemovePieceNoHash(piece.Type, piece.Color, from);
+                this.PlacePieceNoHash(Pieces.Pawn, piece.Color, from);
 
                 // Replace captured piece, if there was one
                 const captured = state.Captured;
                 if (captured) {
-                    this.PlacePiece(captured.Type, captured.Color, to);
+                    this.PlacePieceNoHash(captured.Type, captured.Color, to);
                 }
 
                 break;
             }
             case MoveType.KingCastle:
             case MoveType.QueenCastle: {
-                this.RemovePiece(piece.Type, piece.Color, to);
+                this.RemovePieceNoHash(piece.Type, piece.Color, to);
 
                 // Move the rook back
                 if (piece.Color === Color.White && moveType === MoveType.KingCastle) {
-                    this.RemovePiece(Pieces.Rook, piece.Color, Square.f1);
-                    this.PlacePiece(Pieces.Rook, piece.Color, Square.h1);
+                    this.RemovePieceNoHash(Pieces.Rook, piece.Color, Square.f1);
+                    this.PlacePieceNoHash(Pieces.Rook, piece.Color, Square.h1);
                 }
                 else if (piece.Color === Color.White && moveType === MoveType.QueenCastle) {
-                    this.RemovePiece(Pieces.Rook, piece.Color, Square.d1);
-                    this.PlacePiece(Pieces.Rook, piece.Color, Square.a1);
+                    this.RemovePieceNoHash(Pieces.Rook, piece.Color, Square.d1);
+                    this.PlacePieceNoHash(Pieces.Rook, piece.Color, Square.a1);
                 }
                 else if (piece.Color === Color.Black && moveType === MoveType.KingCastle) {
-                    this.RemovePiece(Pieces.Rook, piece.Color, Square.f8);
-                    this.PlacePiece(Pieces.Rook, piece.Color, Square.h8);
+                    this.RemovePieceNoHash(Pieces.Rook, piece.Color, Square.f8);
+                    this.PlacePieceNoHash(Pieces.Rook, piece.Color, Square.h8);
                 }
                 else if (piece.Color === Color.Black && moveType === MoveType.QueenCastle) {
-                    this.RemovePiece(Pieces.Rook, piece.Color, Square.d8);
-                    this.PlacePiece(Pieces.Rook, piece.Color, Square.a8);
+                    this.RemovePieceNoHash(Pieces.Rook, piece.Color, Square.d8);
+                    this.PlacePieceNoHash(Pieces.Rook, piece.Color, Square.a8);
                 }
                 break;
             }
@@ -1100,6 +1094,8 @@ class Khepri {
         if (piece === Pieces.Pawn || piece === Pieces.King) {
             this.Position.PawnHash ^= this.Zobrist.Pieces[color][piece][square];
         }
+
+        this.Position.Phase += this.PhaseValues[piece];
     }
 
     PlacePiece(piece: Pieces, color: Color.Black | Color.White, square: Square) {
@@ -1111,6 +1107,24 @@ class Khepri {
         if (piece === Pieces.Pawn || piece === Pieces.King) {
             this.Position.PawnHash ^= this.Zobrist.Pieces[color][piece][square];
         }
+
+        this.Position.Phase -= this.PhaseValues[piece];
+    }
+
+    PlacePieceNoHash(piece: Pieces, color: Color.Black | Color.White, square: Square) {
+        this.Position.PiecesBB[color][piece] = this.SetBit(this.Position.PiecesBB[color][piece], square);
+        this.Position.OccupanciesBB[color] = this.SetBit(this.Position.OccupanciesBB[color], square);
+        this.Position.Squares[square] = { Type: piece, Color: color };
+
+        this.Position.Phase -= this.PhaseValues[piece];
+    }
+
+    RemovePieceNoHash(piece: Pieces, color: Color.Black | Color.White, square: Square) {
+        this.Position.PiecesBB[color][piece] = this.RemoveBit(this.Position.PiecesBB[color][piece], square);
+        this.Position.OccupanciesBB[color] = this.RemoveBit(this.Position.OccupanciesBB[color], square);
+        delete this.Position.Squares[square];
+
+        this.Position.Phase += this.PhaseValues[piece];
     }
 
     PrettyPrintMove(move: number) {
@@ -1140,11 +1154,11 @@ class Khepri {
      **************************/
 
     private rankMasks: bigint[] = [];
-    private fileMasks: bigint[] = [];
+    fileMasks: bigint[] = [];
     private diagMasks: bigint[] = [];
     private antiDiagMasks: bigint[] = [];
-    private isolatedMasks: bigint[] = [];
-    private passedMasks = Array(2).fill(0).map(() => Array(64).fill(0))
+    isolatedMasks: bigint[] = [];
+    passedMasks = Array(2).fill(0).map(() => Array(64).fill(0))
 
     private readonly notAFile = 18374403900871474942n;
     private readonly notHFile = 9187201950435737471n;
@@ -1645,7 +1659,7 @@ class Khepri {
      * 
      **************************/
 
-    private readonly PawnAttacks: bigint[][] = Array.from(Array(2), () => new Array(64));
+    readonly PawnAttacks: bigint[][] = Array.from(Array(2), () => new Array(64));
     private readonly KnightAttacks: bigint[] = [];
     private readonly KingAttacks: bigint[] = [];
     private readonly BishopMasks: bigint[] = Array(64);
@@ -1701,10 +1715,10 @@ class Khepri {
      * 
      **************************/
 
-    private readonly MGPieceValue = [90, 320, 350, 475, 950, 15000];
-    private readonly EGPieceValue = [100, 250, 280, 510, 975, 15000];
+    readonly MGPieceValue = [90, 320, 350, 475, 950, 15000];
+    readonly EGPieceValue = [100, 250, 280, 510, 975, 15000];
 
-    private readonly PST = [
+    PST = [
         // opening/middle game values
         [
             // pawn
@@ -1856,20 +1870,24 @@ class Khepri {
     ];
 
     private readonly PhaseValues = [0, 1, 1, 2, 4, 0];
-    private readonly MGdoubledPenalty = 2;
-    private readonly EGdoubledPenalty = 15;
-    private readonly MGisolatedPenalty = 20;
-    private readonly EGisolatedPenalty = 2;
-    private readonly MGfileSemiOpenScore = 10;
-    private readonly MGfileOpenScore = 25;
-    private readonly MGpassedBonus = [0, 5, 1,  3, 15, 30, 100, 0];
-    private readonly EGpassedBonus = [0, 0, 4, 10, 25, 60, 120, 0];
-    private readonly MGrookQueenFileBonus = 7;
+    readonly MGdoubledPenalty = 2;
+    readonly EGdoubledPenalty = 15;
+    readonly MGisolatedPenalty = 20;
+    readonly EGisolatedPenalty = 2;
+    readonly MGfileSemiOpenScore = 10;
+    readonly MGfileOpenScore = 25;
+    readonly MGpassedBonus = [0, 5, 1,  3, 15, 30, 100, 0];
+    readonly EGpassedBonus = [0, 0, 4, 10, 25, 60, 120, 0];
+    readonly MGrookQueenFileBonus = 7;
+    readonly MGKnightOutpostBonus = 15;
+    readonly EGKnightOutpostBonus = 5;
+
+    readonly PhaseTotal = (this.PhaseValues[Pieces.Knight] * 4) + (this.PhaseValues[Pieces.Bishop] * 4) + (this.PhaseValues[Pieces.Rook] * 4) + (this.PhaseValues[Pieces.Queen] * 2);
 
     Evaluate() {
         let mgScores = [0, 0];
         let egScores = [0, 0];
-        let phase = 24; // (N*4) + (B*4) + (R*4) + (Q*2), where N = 1, B = 1, R = 2, Q = 4
+        let phase = this.Position.Phase;
 
         let board = (this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black])
                     & ~(this.Position.PiecesBB[Color.White][Pieces.Pawn] | this.Position.PiecesBB[Color.Black][Pieces.Pawn]);
@@ -1914,8 +1932,6 @@ class Khepri {
                 square ^= 56;
             }
 
-            phase -= this.PhaseValues[piece.Type];
-
             switch (piece.Type) {
                 case Pieces.Knight: {
                     mgScores[piece.Color] += this.PST[0][Pieces.Knight][square] + this.MGPieceValue[Pieces.Knight];
@@ -1924,8 +1940,8 @@ class Khepri {
                     // Knight outposts
                     if (this.PawnAttacks[piece.Color ^ 1][actualSquare] & this.Position.PiecesBB[piece.Color][Pieces.Pawn]
                         && (this.PawnAttacks[piece.Color][actualSquare] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n) {
-                        mgScores[piece.Color] += 15;
-                        egScores[piece.Color] += 5;
+                        mgScores[piece.Color] += this.MGKnightOutpostBonus;
+                        egScores[piece.Color] += this.EGKnightOutpostBonus;
                     }
 
                     break;
@@ -1968,7 +1984,7 @@ class Khepri {
             }
         }
 
-        phase = ((phase * 256 + (24 / 2)) / 24) | 0;
+        phase = ((phase * 256 + (this.PhaseTotal / 2)) / this.PhaseTotal) | 0;
 
         const mgScore = mgScores[this.Position.SideToMove] - mgScores[this.Position.SideToMove ^ 1];
         const egScore = egScores[this.Position.SideToMove] - egScores[this.Position.SideToMove ^ 1];
@@ -2006,12 +2022,13 @@ class Khepri {
                 egScores[piece.Color] -= this.EGisolatedPenalty;
             }
 
+            // passed pawns
             if ((this.passedMasks[piece.Color][square] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n) {
                 // https://www.chessprogramming.org/Ranks
                 const rank = 7 - (square >> 3);
                 mgScores[piece.Color] += this.MGpassedBonus[rank];
                 egScores[piece.Color] += this.EGpassedBonus[rank];
-             }
+            }
         }
 
         return { mgScores, egScores };
