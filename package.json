@@ -3,7 +3,8 @@
   "scripts": {
     "start": "webpack serve --config-name devConfig",
     "build": "webpack --config-name browserConfig --config-name uciConfig",
-    "test": "jest"
+    "test": "jest",
+    "tune": "webpack --config-name tuneConfig"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.18.9",

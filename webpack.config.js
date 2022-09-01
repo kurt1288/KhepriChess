@@ -77,4 +77,34 @@ const uciConfig = {
    },
 }
 
-module.exports = [devConfig, browserConfig, uciConfig];
+const tuneConfig = {
+   name: 'tuneConfig',
+   entry: './tuner/tuner.ts',
+   devtool: 'inline-source-map',
+   target: "node",
+   devServer: {
+      static: {
+         directory: path.join(__dirname, "dist")
+      },
+      port: 9000,
+   },
+   mode: 'development',
+   module: {
+      rules: [
+         {
+            test: /\.tsx?$/,
+            use: 'ts-loader',
+            exclude: /node_modules/,
+         }
+      ]
+   },
+   resolve: {
+      extensions: [ '.tsx', '.ts', '.js' ],
+   },
+   output: {
+      filename: 'tuner.js',
+      path: path.resolve(__dirname, 'dist'),
+   }, 
+}
+
+module.exports = [devConfig, browserConfig, uciConfig, tuneConfig];
