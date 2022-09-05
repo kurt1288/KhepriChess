@@ -2151,8 +2151,8 @@ class Khepri {
             return this.Quiescence(alpha, beta, ply);
         }
 
-        // Check for draw positions (3-fold)
-        if (ply > 0 && this.IsRepetition()) {
+        // Check for 3-fold or 50 moves draw
+        if (ply > 0 && (this.IsRepetition() || this.Position.HalfMoves >= 100)) {
             return 0;
         }
 
