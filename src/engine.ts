@@ -2213,25 +2213,29 @@ class Khepri {
             legalMoves++;
 
             let score = 0;
+            let R = 0;
 
-            // Principal Variation Search
-            // Move ordering should put the PV move first
-            // First do a full search on the PV nodes and then compare other nodes to that score
-            if (legalMoves === 1) {
-                score = -this.Negamax(depth - 1, ply + 1, -beta, -alpha, childPVMoves);
-            }
-            else {
-                let R = 0;
+            // Late move reductions (LMR)
+            if (depth >= 2 && legalMoves > 1) {
+                R = Math.log(depth * legalMoves ** 2) * 0.45;
 
-                if (depth >= 3 && legalMoves >= 4 && !isPVNode && !inCheck) {
-                    R = Math.log(depth * legalMoves ** 2) * 0.45;
+                // Reduce reduction for PV-nodes
+                if (isPVNode) {
+                    R -= 1 + depth / (depth * 3);
                 }
+
+                R = Math.round(Math.max(1, R));
 
                 score = -this.Negamax(depth - 1 - R, ply + 1, -alpha - 1, -alpha, childPVMoves);
 
+                // Do a full search if LMR search fails high
                 if (score > alpha) {
                     score = -this.Negamax(depth - 1, ply + 1, -beta, -alpha, childPVMoves);
                 }
+            }
+            // Full search if not LMR
+            else {
+                score = -this.Negamax(depth - 1, ply + 1, -beta, -alpha, childPVMoves);
             }
 
             this.UnmakeMove(move);
