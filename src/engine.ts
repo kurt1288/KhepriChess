@@ -2238,38 +2238,41 @@ class Khepri {
 
             if (score > bestScore) {
                 bestScore = score;
-                bestMove = move;
-            }
 
-            if (score > alpha) {
-                alpha = score;
-                flag = HashFlag.Exact;
+                if (score > alpha) {
+                    bestMove = move;
 
-                // update the PV line
-                pvMoves.moves.length = 0;
-                pvMoves.moves.push(move);
-                pvMoves.moves.push(...childPVMoves.moves);
+                    if (isPVNode) {
+                        // update the PV line
+                        pvMoves.moves.length = 0;
+                        pvMoves.moves.push(move);
+                        pvMoves.moves.push(...childPVMoves.moves);
+                    }
 
-                // increment history counter if the move is not a capture
-                if (!this.MoveIsCapture(move)) {
-                    this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] += depth * depth;
+                    if (score >= beta) {
+                        if (!this.MoveIsCapture(move)) {
+                            // Store the move if it's a killer
+                            this.search.killers[1][ply] = this.search.killers[0][ply];
+                            this.search.killers[0][ply] = move;
+
+                            // increment history counter
+                            this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] += depth * depth;
+                        }
+
+                        this.WriteTT(this.Position.Hash, depth, HashFlag.Beta, bestScore, bestMove, ply);
+                        return score;
+                    }
+
+                    alpha = score;
+                    flag = HashFlag.Exact;
                 }
             }
-
-            if (score >= beta) {
-                flag = HashFlag.Beta;
-
-                // if the move is not a capture, we should check for a killer move and/or increment the history counter
+            else {
                 if (!this.MoveIsCapture(move)) {
-                    // Store the move if it's a killer
-                    this.search.killers[1][ply] = this.search.killers[0][ply];
-                    this.search.killers[0][ply] = move;
-
-                    // increment history counter
-                    this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] += depth * depth;
+                    if (this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] > 0) {
+                        this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] -= 1;
+                    }
                 }
-
-                break;
             }
 
             childPVMoves.moves.length = 0;
