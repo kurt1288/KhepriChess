@@ -64,6 +64,9 @@ export interface IPosition {
     Hash: bigint
     PawnHash: bigint
     Phase: number
+    CastlingPaths: bigint[]
+    CastlingRookSquares: Square[]
+    CastlingSquaresMask: Square[]
 }
 
 interface Piece {
@@ -133,6 +136,7 @@ class Khepri {
         this.InitAntiDiagMasks();
         this.InitIsolatedMasks();
         this.InitPassedMasks();
+        this.InitBetweenMasks();
         this.InitJumperAttacks();
         this.InitBishopAttacks();
         this.InitRookAttacks();
@@ -143,6 +147,9 @@ class Khepri {
     readonly name = "KhepriChess";
     readonly version = "2.1.0";
     readonly author = "Kurt Peters";
+
+    // Flag to indicate if the game is Chess960/Fischer Random
+    isChess960 = false;
 
     static readonly positions = {
         empty: "8/8/8/8/8/8/8/8 b - - ",
@@ -248,6 +255,9 @@ class Khepri {
         Hash: 0n,
         PawnHash: 0n,
         Phase: 0,
+        CastlingPaths: [],
+        CastlingRookSquares: [],
+        CastlingSquaresMask: [],
     }
 
     private readonly PositionHistory: bigint[] = [];
@@ -281,6 +291,7 @@ class Khepri {
         this.Position.Squares = [];
         this.Position.EnPassSq = Square.no_sq;
         this.Position.Phase = this.PhaseTotal;
+        this.Position.CastlingSquaresMask = new Array(64).fill(15);
 
         const pieces = fen.split(" ")[0].split("");
 
@@ -320,11 +331,78 @@ class Khepri {
         // Set castling rights
         const castling = fen.split(' ')[2].split('');
         for (const castle of castling) {
-            switch (castle) {
-                case 'K': this.Position.CastlingRights |= CastlingRights.WhiteKingside; break;
-                case 'Q': this.Position.CastlingRights |= CastlingRights.WhiteQueenside; break;
-                case 'k': this.Position.CastlingRights |= CastlingRights.BlackKingside; break;
-                case 'q': this.Position.CastlingRights |= CastlingRights.BlackQueenside; break;
+            const side = castle.toUpperCase() === castle ? Color.White : Color.Black;
+            const kingSquare = this.Position.Squares.findIndex(x => x && x.Type === Pieces.King && x.Color === side);
+            this.Position.CastlingSquaresMask[kingSquare] = side === Color.White ? 12 : 3;
+
+            if (castle.toUpperCase() === "K") {
+                const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i > kingSquare);
+
+                if (side === Color.White) {
+                    this.Position.CastlingRights |= CastlingRights.WhiteKingside;
+                    this.Position.CastlingPaths[CastlingRights.WhiteKingside] = (this.betweenMasks[kingSquare][Square.g1] | this.betweenMasks[rookSquare][Square.f1]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
+                    this.Position.CastlingRookSquares[CastlingRights.WhiteKingside] = Square.g1;
+                    this.Position.CastlingSquaresMask[rookSquare] = 14;
+                }
+                else {
+                    this.Position.CastlingRights |= CastlingRights.BlackKingside;
+                    this.Position.CastlingPaths[CastlingRights.BlackKingside] = (this.betweenMasks[kingSquare][Square.g8] | this.betweenMasks[rookSquare][Square.f8]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
+                    this.Position.CastlingRookSquares[CastlingRights.BlackKingside] = Square.g8;
+                    this.Position.CastlingSquaresMask[rookSquare] = 11;
+                }
+            }
+            else if (castle.toUpperCase() === "Q") {
+                const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i < kingSquare);
+
+                if (side === Color.White) {
+                    this.Position.CastlingRights |= CastlingRights.WhiteQueenside;
+                    this.Position.CastlingPaths[CastlingRights.WhiteQueenside] = (this.betweenMasks[kingSquare][Square.c1] | this.betweenMasks[rookSquare][Square.d1]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
+                    this.Position.CastlingRookSquares[CastlingRights.WhiteQueenside] = Square.c1;
+                    this.Position.CastlingSquaresMask[rookSquare] = 13;
+                }
+                else {
+                    this.Position.CastlingRights |= CastlingRights.BlackQueenside;
+                    this.Position.CastlingPaths[CastlingRights.BlackQueenside] = (this.betweenMasks[kingSquare][Square.c8] | this.betweenMasks[rookSquare][Square.d8]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
+                    this.Position.CastlingRookSquares[CastlingRights.BlackQueenside] = Square.c8;
+                    this.Position.CastlingSquaresMask[rookSquare] = 7;
+                }
+            }
+            // Shredder-FEN castling notation for Chess960
+            else if (castle.toUpperCase() >= "A" && castle.toUpperCase() <= "H") {
+                // Kingside castle
+                if (castle.toUpperCase().charCodeAt(0) - 65 > (kingSquare & 7)) {
+                    const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i > kingSquare);
+
+                    if (side === Color.White) {
+                        this.Position.CastlingRights |= CastlingRights.WhiteKingside;
+                        this.Position.CastlingPaths[CastlingRights.WhiteKingside] = (this.betweenMasks[kingSquare][Square.g1] | this.betweenMasks[rookSquare][Square.f1]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
+                        this.Position.CastlingRookSquares[CastlingRights.WhiteKingside] = rookSquare;
+                        this.Position.CastlingSquaresMask[rookSquare] = 14;
+                    }
+                    else {
+                        this.Position.CastlingRights |= CastlingRights.BlackKingside;
+                        this.Position.CastlingPaths[CastlingRights.BlackKingside] = (this.betweenMasks[kingSquare][Square.g8] | this.betweenMasks[rookSquare][Square.f8]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
+                        this.Position.CastlingRookSquares[CastlingRights.BlackKingside] = rookSquare;
+                        this.Position.CastlingSquaresMask[rookSquare] = 11;
+                    }
+                }
+                // Queenside castle
+                else {
+                    if (side === Color.White) {
+                        const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i >= 56 && i < kingSquare);
+                        this.Position.CastlingRights |= CastlingRights.WhiteQueenside;
+                        this.Position.CastlingPaths[CastlingRights.WhiteQueenside] = (this.betweenMasks[kingSquare][Square.c1] | this.betweenMasks[rookSquare][Square.d1]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
+                        this.Position.CastlingRookSquares[CastlingRights.WhiteQueenside] = rookSquare;
+                        this.Position.CastlingSquaresMask[rookSquare] = 13;
+                    }
+                    else {
+                        const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i < kingSquare);
+                        this.Position.CastlingRights |= CastlingRights.BlackQueenside;
+                        this.Position.CastlingPaths[CastlingRights.BlackQueenside] = (this.betweenMasks[kingSquare][Square.c8] | this.betweenMasks[rookSquare][Square.d8]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
+                        this.Position.CastlingRookSquares[CastlingRights.BlackQueenside] = rookSquare;
+                        this.Position.CastlingSquaresMask[rookSquare] = 7;
+                    }
+                }
             }
         }
 
@@ -573,33 +651,83 @@ class Khepri {
     }
 
     GenerateCastlingMoves(moveList: Move[]) {
-        const bothBB = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-        if (this.Position.SideToMove === Color.White) {
-            // Can white castle kingside?
-            if (this.Position.CastlingRights & CastlingRights.WhiteKingside
-                && (bothBB & 6917529027641081856n) === 0n
-                && !this.IsSquareAttacked(Square.e1, Color.Black) && !this.IsSquareAttacked(Square.f1, Color.Black) && !this.IsSquareAttacked(Square.g1, Color.Black)) {
-                    moveList.push(this.EncodeMove(Square.e1, Square.g1, MoveType.KingCastle));
-                }
-            // Can white castle queenside?
-            if (this.Position.CastlingRights & CastlingRights.WhiteQueenside
-                && (bothBB & 1008806316530991104n) === 0n
-                && !this.IsSquareAttacked(Square.e1, Color.Black) && !this.IsSquareAttacked(Square.d1, Color.Black) && !this.IsSquareAttacked(Square.c1, Color.Black)) {
-                    moveList.push(this.EncodeMove(Square.e1, Square.c1, MoveType.QueenCastle));
-                }
+        const kingSquare = this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]);
+
+        if (this.IsSquareAttacked(kingSquare, this.Position.SideToMove ^ 1)) {
+            return;
         }
-        else {
-            // Can black castle kingside?
-            if (this.Position.CastlingRights & CastlingRights.BlackKingside
-                && (bothBB & 96n) === 0n
-                && !this.IsSquareAttacked(Square.e8, Color.White) && !this.IsSquareAttacked(Square.f8, Color.White) && !this.IsSquareAttacked(Square.g8, Color.White)) {
-                    moveList.push(this.EncodeMove(Square.e8, Square.g8, MoveType.KingCastle));
+
+        const bothBB = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
+
+        if (this.Position.SideToMove === Color.White) {
+            if (this.Position.CastlingRights & CastlingRights.WhiteKingside) {
+                let path = this.betweenMasks[kingSquare][Square.g1];
+                if ((this.Position.CastlingPaths[CastlingRights.WhiteKingside] & bothBB) === 0n) {
+                    let canCastle = true;
+                    while (canCastle && path) {
+                        const square = this.GetLS1B(path);
+                        path = this.RemoveBit(path, square);
+                        if (this.IsSquareAttacked(square, this.Position.SideToMove ^ 1)) {
+                            canCastle = false;
+                        }
+                    }
+                    if (canCastle) {
+                        moveList.push(this.EncodeMove(kingSquare, this.Position.CastlingRookSquares[CastlingRights.WhiteKingside], MoveType.KingCastle));
+                    }
                 }
-            if (this.Position.CastlingRights & CastlingRights.BlackQueenside
-                && (bothBB & 14n) === 0n
-                && !this.IsSquareAttacked(Square.e8, Color.White) && !this.IsSquareAttacked(Square.d8, Color.White) && !this.IsSquareAttacked(Square.c8, Color.White)) {
-                    moveList.push(this.EncodeMove(Square.e8, Square.c8, MoveType.QueenCastle));
+            }
+    
+            if (this.Position.CastlingRights & CastlingRights.WhiteQueenside) {
+                let path = this.betweenMasks[kingSquare][Square.c1];
+                if ((this.Position.CastlingPaths[CastlingRights.WhiteQueenside] & bothBB) === 0n) {
+                    let canCastle = true;
+                    while (canCastle && path) {
+                        const square = this.GetLS1B(path);
+                        path = this.RemoveBit(path, square);
+                        if (this.IsSquareAttacked(square, this.Position.SideToMove ^ 1)) {
+                            canCastle = false;
+                        }
+                    }
+                    if (canCastle) {
+                        moveList.push(this.EncodeMove(kingSquare, this.Position.CastlingRookSquares[CastlingRights.WhiteQueenside], MoveType.QueenCastle));
+                    }
                 }
+            }
+        }
+        else {            
+            if (this.Position.CastlingRights & CastlingRights.BlackKingside) {
+                let path = this.betweenMasks[kingSquare][Square.g8];
+                if ((this.Position.CastlingPaths[CastlingRights.BlackKingside] & bothBB) === 0n) {
+                    let canCastle = true;
+                    while (canCastle && path) {
+                        const square = this.GetLS1B(path);
+                        path = this.RemoveBit(path, square);
+                        if (this.IsSquareAttacked(square, this.Position.SideToMove ^ 1)) {
+                            canCastle = false;
+                        }
+                    }
+                    if (canCastle) {
+                        moveList.push(this.EncodeMove(kingSquare, this.Position.CastlingRookSquares[CastlingRights.BlackKingside], MoveType.KingCastle));
+                    }
+                }
+            }
+    
+            if (this.Position.CastlingRights & CastlingRights.BlackQueenside) {
+                let path = this.betweenMasks[kingSquare][Square.c8];
+                if ((this.Position.CastlingPaths[CastlingRights.BlackQueenside] & bothBB) === 0n) {
+                    let canCastle = true;
+                    while (canCastle && path) {
+                        const square = this.GetLS1B(path);
+                        path = this.RemoveBit(path, square);
+                        if (this.IsSquareAttacked(square, this.Position.SideToMove ^ 1)) {
+                            canCastle = false;
+                        }
+                    }
+                    if (canCastle) {
+                        moveList.push(this.EncodeMove(kingSquare, this.Position.CastlingRookSquares[CastlingRights.BlackQueenside], MoveType.QueenCastle));
+                    }
+                }
+            }
         }
     }
 
@@ -903,32 +1031,14 @@ class Khepri {
             }
             case MoveType.KingCastle:
             case MoveType.QueenCastle: {
-                this.PlacePiece(piece.Type, piece.Color, to);
-
-                // Move the appropriate rook to the castle square
-                if (piece.Color === Color.White && moveType === MoveType.KingCastle) {
-                    this.RemovePiece(Pieces.Rook, piece.Color, Square.h1);
-                    this.PlacePiece(Pieces.Rook, piece.Color, Square.f1);
-                }
-                else if (piece.Color === Color.White && moveType === MoveType.QueenCastle) {
-                    this.RemovePiece(Pieces.Rook, piece.Color, Square.a1);
-                    this.PlacePiece(Pieces.Rook, piece.Color, Square.d1);
-                }
-                else if (piece.Color === Color.Black && moveType === MoveType.KingCastle) {
-                    this.RemovePiece(Pieces.Rook, piece.Color, Square.h8);
-                    this.PlacePiece(Pieces.Rook, piece.Color, Square.f8);
-                }
-                else if (piece.Color === Color.Black && moveType === MoveType.QueenCastle) {
-                    this.RemovePiece(Pieces.Rook, piece.Color, Square.a8);
-                    this.PlacePiece(Pieces.Rook, piece.Color, Square.d8);
-                }
+                this.DoCastle(move, piece, moveType);
                 break;
             }
         }
 
         // update castling rights
         this.Position.Hash ^= this.Zobrist.Castle[this.Position.CastlingRights];
-        this.Position.CastlingRights &= this.CastlingSquares[from] & this.CastlingSquares[to];
+        this.Position.CastlingRights &= this.Position.CastlingSquaresMask[from] & this.Position.CastlingSquaresMask[(move & 0xfc0) >> 6];
         this.Position.Hash ^= this.Zobrist.Castle[this.Position.CastlingRights];
 
         // Update the side to move
@@ -970,31 +1080,26 @@ class Khepri {
         const from = move & 0x3f;
         const to = (move & 0xfc0) >> 6;
         const moveType = move >> 12;
+
         const piece = this.Position.Squares[to];
 
-        // Put the piece back on its original square
-        this.PlacePieceNoHash(piece.Type, piece.Color, from);
+        // Because of Chess960, we need to handle castle separately
+        if (moveType !== MoveType.KingCastle && moveType !== MoveType.QueenCastle) {
+            // Move the piece from the square it moved to back to its original square
+            this.RemovePieceNoHash(piece.Type, piece.Color, to);
+            this.PlacePieceNoHash(piece.Type, piece.Color, from);
+        }
 
         switch (moveType) {
-            case MoveType.Quiet: {
-                this.RemovePieceNoHash(piece.Type, piece.Color, to);
-                break;
-            }
-            case MoveType.DoublePawnPush: {
-                this.RemovePieceNoHash(piece.Type, piece.Color, to);
-                break;
-            }
             case MoveType.Capture: {
                 let captured = state.Captured as Piece;
 
-                this.RemovePieceNoHash(piece.Type, piece.Color, to);
                 this.PlacePieceNoHash(captured.Type, captured.Color, to);
                 break;
             }
             case MoveType.EPCapture: {
                 let captured = state.Captured as Piece;
 
-                this.RemovePieceNoHash(piece.Type, piece.Color, to);
                 const epSquare = this.Position.SideToMove === Color.White ? to + 8 : to - 8;
                 this.PlacePieceNoHash(captured.Type, captured.Color, epSquare);
                 break;
@@ -1007,7 +1112,6 @@ class Khepri {
             case MoveType.BishopPromoCapture:
             case MoveType.RookPromoCapture:
             case MoveType.QueenPromoCapture: {
-                this.RemovePieceNoHash(piece.Type, piece.Color, to);
                 // Have to remove the promoted piece and replace it with a pawn
                 this.RemovePieceNoHash(piece.Type, piece.Color, from);
                 this.PlacePieceNoHash(Pieces.Pawn, piece.Color, from);
@@ -1022,25 +1126,7 @@ class Khepri {
             }
             case MoveType.KingCastle:
             case MoveType.QueenCastle: {
-                this.RemovePieceNoHash(piece.Type, piece.Color, to);
-
-                // Move the rook back
-                if (piece.Color === Color.White && moveType === MoveType.KingCastle) {
-                    this.RemovePieceNoHash(Pieces.Rook, piece.Color, Square.f1);
-                    this.PlacePieceNoHash(Pieces.Rook, piece.Color, Square.h1);
-                }
-                else if (piece.Color === Color.White && moveType === MoveType.QueenCastle) {
-                    this.RemovePieceNoHash(Pieces.Rook, piece.Color, Square.d1);
-                    this.PlacePieceNoHash(Pieces.Rook, piece.Color, Square.a1);
-                }
-                else if (piece.Color === Color.Black && moveType === MoveType.KingCastle) {
-                    this.RemovePieceNoHash(Pieces.Rook, piece.Color, Square.f8);
-                    this.PlacePieceNoHash(Pieces.Rook, piece.Color, Square.h8);
-                }
-                else if (piece.Color === Color.Black && moveType === MoveType.QueenCastle) {
-                    this.RemovePieceNoHash(Pieces.Rook, piece.Color, Square.d8);
-                    this.PlacePieceNoHash(Pieces.Rook, piece.Color, Square.a8);
-                }
+                this.UndoCastle(move, moveType);
                 break;
             }
         }
@@ -1048,6 +1134,72 @@ class Khepri {
         // Set hash to previous value
         this.Position.Hash = state.Hash;
         this.Position.PawnHash = state.PawnHash;
+    }
+
+    DoCastle(move: Move, piece: Piece, moveType: MoveType) {
+        let kingTo = Square.no_sq;
+
+        // Move the appropriate rook to the castle square
+        if (piece.Color === Color.White && moveType === MoveType.KingCastle) {
+            const rookFrom = this.isChess960 ? (move & 0xfc0) >> 6 : Square.h1;
+            this.RemovePiece(Pieces.Rook, piece.Color, rookFrom);
+            this.PlacePiece(Pieces.Rook, piece.Color, Square.f1);
+            kingTo = Square.g1;
+        }
+        else if (piece.Color === Color.White && moveType === MoveType.QueenCastle) {
+            const rookFrom = this.isChess960 ? (move & 0xfc0) >> 6 : Square.a1;
+            this.RemovePiece(Pieces.Rook, piece.Color, rookFrom);
+            this.PlacePiece(Pieces.Rook, piece.Color, Square.d1);
+            kingTo = Square.c1;
+        }
+        else if (piece.Color === Color.Black && moveType === MoveType.KingCastle) {
+            const rookFrom = this.isChess960 ? (move & 0xfc0) >> 6 : Square.h8;
+            this.RemovePiece(Pieces.Rook, piece.Color, rookFrom);
+            this.PlacePiece(Pieces.Rook, piece.Color, Square.f8);
+            kingTo = Square.g8;
+        }
+        else if (piece.Color === Color.Black && moveType === MoveType.QueenCastle) {
+            const rookFrom = this.isChess960 ? (move & 0xfc0) >> 6 : Square.a8;
+            this.RemovePiece(Pieces.Rook, piece.Color, rookFrom);
+            this.PlacePiece(Pieces.Rook, piece.Color, Square.d8);
+            kingTo = Square.c8;
+        }
+
+        // Place the king on the final square
+        this.PlacePiece(piece.Type, piece.Color, kingTo);
+    }
+
+    UndoCastle(move: Move, moveType: MoveType) {
+        const color = this.Position.SideToMove;
+
+        // Move the rook back
+        if (color === Color.White && moveType === MoveType.KingCastle) {
+            const rookFrom = this.isChess960 ? (move & 0xfc0) >> 6 : Square.h1;
+            this.RemovePieceNoHash(Pieces.Rook, color, Square.f1);
+            this.RemovePieceNoHash(Pieces.King, color, Square.g1);
+            this.PlacePieceNoHash(Pieces.Rook, color, rookFrom);
+        }
+        else if (color === Color.White && moveType === MoveType.QueenCastle) {
+            const rookFrom = this.isChess960 ? (move & 0xfc0) >> 6 : Square.a1;
+            this.RemovePieceNoHash(Pieces.Rook, color, Square.d1);
+            this.RemovePieceNoHash(Pieces.King, color, Square.c1);
+            this.PlacePieceNoHash(Pieces.Rook, color, rookFrom);
+        }
+        else if (color === Color.Black && moveType === MoveType.KingCastle) {
+            const rookFrom = this.isChess960 ? (move & 0xfc0) >> 6 : Square.h8;
+            this.RemovePieceNoHash(Pieces.Rook, color, Square.f8);
+            this.RemovePieceNoHash(Pieces.King, color, Square.g8);
+            this.PlacePieceNoHash(Pieces.Rook, color, rookFrom);
+        }
+        else if (color === Color.Black && moveType === MoveType.QueenCastle) {
+            const rookFrom = this.isChess960 ? (move & 0xfc0) >> 6 : Square.a8;
+            this.RemovePieceNoHash(Pieces.Rook, color, Square.d8);
+            this.RemovePieceNoHash(Pieces.King, color, Square.c8);
+            this.PlacePieceNoHash(Pieces.Rook, color, rookFrom);
+        }
+
+        // Move the king back
+        this.PlacePieceNoHash(Pieces.King, color, move & 0x3f);
     }
 
     MakeNullMove() {
@@ -1158,7 +1310,8 @@ class Khepri {
     private diagMasks: bigint[] = [];
     private antiDiagMasks: bigint[] = [];
     isolatedMasks: bigint[] = [];
-    passedMasks = Array(2).fill(0).map(() => Array(64).fill(0))
+    passedMasks = Array(2).fill(0).map(() => Array(64).fill(0));
+    private readonly betweenMasks: bigint[][] = Array(64).fill(0n).map(() => Array(64).fill(0n));
 
     private readonly notAFile = 18374403900871474942n;
     private readonly notHFile = 9187201950435737471n;
@@ -1212,6 +1365,38 @@ class Khepri {
 
             for (let s = square; s >= Square.a8; s -= 8) {
                 this.passedMasks[Color.Black][square ^ 56] &= ~this.rankMasks[s];
+            }
+        }
+    }
+
+    /**
+     * Will return all squares after sq1 and up to and including s2, moving horizontally rank by rank (not diagonally)
+     * Not the best method, but works for castling paths
+     */
+    InitBetweenMasks() {
+        for (let sq1 = 0; sq1 < 64; sq1++) {
+            let mask = 0n;
+
+            for (let sq2 = 0; sq2 < 64; sq2++) {
+                if (sq1 === sq2) {
+                    continue;
+                }
+
+                if (sq1 < sq2) {
+                    mask = this.SetBit(0n, sq1 + 1);
+                    for (let start = sq1 + 1; start <= sq2; start++) {
+                        mask |= 0x0001n << BigInt(start);
+                    }
+                }
+                else {
+                    mask = this.SetBit(0n, sq1 - 1);
+                    for (let start = sq1 - 1; start >= sq2; start--) {
+                        mask |= 0x0001n << BigInt(start);
+                    }
+                }
+                
+
+                this.betweenMasks[sq1][sq2] = mask;
             }
         }
     }
@@ -2688,10 +2873,12 @@ class Khepri {
             moveType = MoveType.DoublePawnPush;
         }
         // Check if the move was a castling move
-        else if ((move === "e1g1" || move === "e8g8") && piece === Pieces.King) {
+        else if (((to === this.Position.CastlingRookSquares[CastlingRights.WhiteKingside] && this.Position.CastlingRights & CastlingRights.WhiteKingside )
+            || (to === this.Position.CastlingRookSquares[CastlingRights.BlackKingside] && this.Position.CastlingRights & CastlingRights.BlackKingside)) && piece === Pieces.King) {
             moveType = MoveType.KingCastle;
         }
-        else if ((move === "e1c1" || move === "e8c8") && piece === Pieces.King) {
+        else if (((to === this.Position.CastlingRookSquares[CastlingRights.WhiteQueenside] && this.Position.CastlingRights & CastlingRights.WhiteQueenside)
+            || (to === this.Position.CastlingRookSquares[CastlingRights.BlackQueenside] && this.Position.CastlingRights & CastlingRights.BlackQueenside)) && piece === Pieces.King) {
             moveType = MoveType.QueenCastle;
         }
         // If en passant capture
@@ -2764,7 +2951,7 @@ class Khepri {
 
     private totalNodes = 0;
 
-    Perft(depth: number) {
+    Perft(depth: number, printNodes = false) {
         this.totalNodes = 0;
         const start = performance.now();
     
@@ -2777,14 +2964,18 @@ class Khepri {
             if (this.MakeMove(move)) {
                 let nodes = this.PerftDriver(depth - 1);
     
-                console.log(`${this.PrettyPrintMove(move)}: ${nodes}`);
+                if (printNodes) {
+                    console.log(`${this.PrettyPrintMove(move)}: ${nodes}`);
+                }
             }
     
             this.UnmakeMove(move);
         }
     
         const end = performance.now();
-        console.log(`Nodes: ${this.totalNodes.toLocaleString()}. Time taken: ${end - start}`);
+        if (printNodes) {
+            console.log(`Nodes: ${this.totalNodes.toLocaleString()}. Time taken: ${end - start}`);
+        }
     
         return this.totalNodes;
     }

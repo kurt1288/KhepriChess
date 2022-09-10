@@ -1,4 +1,6 @@
-import Engine from "./engine";
+import fs from "fs";
+import path from "path";
+import Engine from "../src/engine";
 
 describe("perft tests", () => {
    describe("opening", () => {
@@ -176,4 +178,56 @@ describe("perft tests", () => {
          expect(engine.Perft(4)).toBe(3894594);
       });
    });
-})
+});
+
+interface Position {
+   fen: string
+   d1: number
+   d2: number
+   d3: number
+   d4: number
+}
+
+describe("chess960 position tests", () => {
+   const file = fs.readFileSync(path.join(__dirname, "fischer.epd.txt"), 'utf8');
+   const position: Position[] = [];
+   const lines = file.split(/\r?\n/);
+
+   // Don't test all 960 positions at once. You'll get an out-of-memory exception
+   for (let i = 0; i < 100; i++) {
+      const temp = lines[i].split(";");
+
+      position.push({
+         fen: temp[0].trim(),
+         d1: parseInt(temp[1].trim().split(" ")[1]),
+         d2: parseInt(temp[2].trim().split(" ")[1]),
+         d3: parseInt(temp[3].trim().split(" ")[1]),
+         d4: parseInt(temp[4].trim().split(" ")[1]),
+      });
+   }
+
+   describe.each(position)("Position %s", (position) => {
+      let engine: Engine;
+      beforeEach(() => {
+         engine = new Engine();
+         engine.isChess960 = true;
+         engine.LoadFEN(position.fen);
+      });
+
+      test("depth 1", () => {
+         expect(engine.Perft(1)).toBe(position.d1);
+      });
+
+      test("depth 2", () => {
+         expect(engine.Perft(2)).toBe(position.d2);
+      });
+
+      test("depth 3", () => {
+         expect(engine.Perft(3)).toBe(position.d3);
+      });
+
+      test("depth 4", () => {
+         expect(engine.Perft(4)).toBe(position.d4);
+      });
+   });
+});
