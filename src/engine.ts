@@ -2066,6 +2066,8 @@ class Khepri {
     readonly MGrookQueenFileBonus = 9;
     readonly MGKnightOutpostBonus = 13;
     readonly EGKnightOutpostBonus = 10;
+    readonly MGCorneredBishopPenalty = 25;
+    readonly EGCorneredBishopPenalty = 40;
 
     readonly PhaseTotal = (this.PhaseValues[Pieces.Knight] * 4) + (this.PhaseValues[Pieces.Bishop] * 4) + (this.PhaseValues[Pieces.Rook] * 4) + (this.PhaseValues[Pieces.Queen] * 2);
 
@@ -2134,6 +2136,21 @@ class Khepri {
                 case Pieces.Bishop: {
                     mgScores[piece.Color] += this.PST[0][Pieces.Bishop][square] + this.MGPieceValue[Pieces.Bishop];
                     egScores[piece.Color] += this.PST[1][Pieces.Bishop][square] + this.EGPieceValue[Pieces.Bishop];
+
+                    // An idea from Stockfish - If the bishop is on a corner square and blocked diagonally by a friendly pawn it deserves a penalty
+                    if (this.isChess960 && (square === Square.a1 || square === Square.h1)) {
+                        let blockingPawn = (square & 7) === 0 ? (1n << 49n) : (1n << 54n);
+
+                        if (piece.Color === Color.Black) {
+                            blockingPawn = blockingPawn >> 40n;
+                        }
+
+                        if ((blockingPawn & this.Position.PiecesBB[piece.Color][Pieces.Pawn]) !== 0n) {
+                            mgScores[piece.Color] -= this.MGCorneredBishopPenalty;
+                            egScores[piece.Color] -= this.EGCorneredBishopPenalty;
+                        }
+                    }
+
                     break;
                 }
                 case Pieces.Rook: {
