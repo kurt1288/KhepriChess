@@ -4,7 +4,7 @@
  * https://github.com/algerbrex/blunder/tree/main/tuner
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, createWriteStream } from 'fs';
 import path from 'path';
 import Engine, { Pieces } from '../src/engine';
 
@@ -344,7 +344,7 @@ function PrintResults(weights: number[], indexes: Indexes) {
             pst[i] = Math.round(slice[i]);
         }
         for (let i = 0; i < 64; i += 8) {
-            console.log(pst.slice(i, i + 8).join(", "));
+            console.log(pst.slice(i, i + 8).join(", ").concat(", "));
         }
         console.log(`]`);
     }
@@ -363,6 +363,7 @@ function PrintResults(weights: number[], indexes: Indexes) {
 }
 
 function Tune(epochs: number, numPositions: number) {
+    console.time("tuner");
     const { weights, indexes } = LoadWeights();
     const positions = LoadPositions(indexes, numPositions, weights.length);
 
@@ -375,6 +376,7 @@ function Tune(epochs: number, numPositions: number) {
     
     let N = numPositions;
     let learningRate = _learningRate;
+    const errors: number[] = [];
 
     for (let epoch = 0; epoch < epochs; epoch++) {
         let gradients = ComputeGradient(positions, weights, indexes);
@@ -385,12 +387,23 @@ function Tune(epochs: number, numPositions: number) {
 			weights[index] += (leadingCoefficent * gradient) * (-learningRate / Math.sqrt(gradientsSumsSquared[index] + _epsilon));
         }
 
+        errors.push(ComputeMSE(positions, weights));
         console.log(`Epoch number ${epoch + 1} completed`);
     }
+
+    const file = createWriteStream("errors.txt");
+    file.on("error", (err) => {
+        throw new Error("Unable to write errors to file");
+    });
+    for (const [index, value] of errors.entries()) {
+        file.write(`${index}, ${value}\n`);
+    }
+    file.end();
 
     console.log(`Best error before tuning: ${beforeErr}`);
     console.log(`Best error after tuning: ${ComputeMSE(positions, weights)}`);
     PrintResults(weights, indexes);
+    console.timeEnd("tuner");
 }
 
 Tune(2000, 0);
