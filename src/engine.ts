@@ -855,7 +855,7 @@ class Khepri {
     }
 
     MoveIsCapture(move: Move) {
-        return this.Position.Squares[(move & 0xfc0) >> 6] !== undefined;
+        return (this.Position.Squares[(move & 0xfc0) >> 6] !== undefined) || (move >> 12 === MoveType.EPCapture);
     }
 
     MoveIsPromotion(move: Move) {
