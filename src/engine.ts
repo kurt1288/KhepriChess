@@ -906,18 +906,6 @@ class Khepri {
      * 
      **************************/
 
-    private readonly CastlingSquares = [
-        7, 15, 15, 15,  3, 15, 15, 11,
-        15, 15, 15, 15, 15, 15, 15, 15,
-        15, 15, 15, 15, 15, 15, 15, 15,
-        15, 15, 15, 15, 15, 15, 15, 15,
-        15, 15, 15, 15, 15, 15, 15, 15,
-        15, 15, 15, 15, 15, 15, 15, 15,
-        15, 15, 15, 15, 15, 15, 15, 15,
-        13, 15, 15, 15, 12, 15, 15, 14
-    ];
-
-
     private readonly stateCopy: State[] = [];
 
     /**
@@ -1771,7 +1759,6 @@ class Khepri {
      * @param ply 
      */
     WriteTT(hash: bigint, depth: number, flag: HashFlag, score: number, move: number, ply: number) {
-        // const entry = this.TranspositionTables.Entries[Number(hash % this.TranspositionTables.Size)];
         const index = Number(hash % this.TranspositionTables.Size);
 
         if (score > this.Checkmate) {
@@ -2652,7 +2639,7 @@ class Khepri {
         let attackedPiece = this.Position.Squares[toSquare]?.Type;
         let sideToMove = this.Position.SideToMove ^ 1;
 
-        if (!attackedPiece) {
+        if (attackedPiece === undefined) {
             return 0;
         }
 
@@ -2772,12 +2759,6 @@ class Khepri {
         else {
             // Games, on average, take approximately 40 moves to complete
             let movesleft = 0;
-            // if (this.Position.Ply < 15 || this.Position.Ply > 25) {
-            //     movesleft = 40 - this.Position.Ply;
-            // }
-            // else {
-            //     movesleft = 20;
-            // }
             if (this.Position.Ply <= 20) {
                 movesleft = 45 - this.Position.Ply;
             }
