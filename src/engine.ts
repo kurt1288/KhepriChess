@@ -1758,8 +1758,8 @@ class Khepri {
      * @param move 
      * @param ply 
      */
-    WriteTT(hash: bigint, depth: number, flag: HashFlag, score: number, move: number) {
-        const index = Number(hash % this.TranspositionTables.Size);
+    WriteTT(depth: number, flag: HashFlag, score: number, move: number) {
+        const index = Number(this.Position.Hash % this.TranspositionTables.Size);
 
         if (score > this.Checkmate) {
             score += this.Position.Ply;
@@ -1773,7 +1773,7 @@ class Khepri {
             BestMove: move,
             Depth: depth,
             Flag: flag,
-            Hash: hash,
+            Hash: this.Position.Hash,
             Score: score,
         }
 
@@ -1789,12 +1789,12 @@ class Khepri {
      * @param beta 
      * @returns 
      */
-    ProbeTT(hash: bigint, depth: number, alpha: number, beta: number) {
-        const entry = this.TranspositionTables.Entries[Number(hash % this.TranspositionTables.Size)];
+    ProbeTT(depth: number, alpha: number, beta: number) {
+        const entry = this.TranspositionTables.Entries[Number(this.Position.Hash % this.TranspositionTables.Size)];
 
         let newScore = this.HashNoMove;
 
-        if (!entry || entry.Hash !== hash) {
+        if (!entry || entry.Hash !== this.Position.Hash) {
             return { ttScore: newScore, ttMove: 0 };
         }
 
@@ -2349,7 +2349,7 @@ class Khepri {
         }
 
         // Check the transposition table for matching position and score
-        const { ttScore, ttMove } = this.ProbeTT(this.Position.Hash, depth, alpha, beta);
+        const { ttScore, ttMove } = this.ProbeTT(depth, alpha, beta);
         if (ttScore !== this.HashNoMove && this.Position.Ply !== 0) {
             return ttScore;
         }
@@ -2455,7 +2455,7 @@ class Khepri {
                             this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] += depth * depth;
                         }
 
-                        this.WriteTT(this.Position.Hash, depth, HashFlag.Beta, bestScore, bestMove);
+                        this.WriteTT(depth, HashFlag.Beta, bestScore, bestMove);
                         return score;
                     }
 
@@ -2486,7 +2486,7 @@ class Khepri {
             }
         }
 
-        this.WriteTT(this.Position.Hash, depth, flag, bestScore, bestMove);
+        this.WriteTT(depth, flag, bestScore, bestMove);
 
         return bestScore;
     }
@@ -2505,7 +2505,7 @@ class Khepri {
         }
 
         // Check the transposition table for matching position and score
-        const { ttScore, ttMove } = this.ProbeTT(this.Position.Hash, 0, alpha, beta);
+        const { ttScore, ttMove } = this.ProbeTT(0, alpha, beta);
         if (ttScore !== this.HashNoMove && this.Position.Ply !== 0) {
             return ttScore;
         }
@@ -2546,7 +2546,7 @@ class Khepri {
             }
 
             if (score >= beta) {
-                this.WriteTT(this.Position.Hash, 0, HashFlag.Beta, bestScore, bestMove);
+                this.WriteTT(0, HashFlag.Beta, bestScore, bestMove);
                 return bestScore;
             }
 
@@ -2556,7 +2556,7 @@ class Khepri {
             }
         }
 
-        this.WriteTT(this.Position.Hash, 0, flag, bestScore, bestMove);
+        this.WriteTT(0, flag, bestScore, bestMove);
 
         return bestScore;
     }
