@@ -1758,15 +1758,15 @@ class Khepri {
      * @param move 
      * @param ply 
      */
-    WriteTT(hash: bigint, depth: number, flag: HashFlag, score: number, move: number, ply: number) {
+    WriteTT(hash: bigint, depth: number, flag: HashFlag, score: number, move: number) {
         const index = Number(hash % this.TranspositionTables.Size);
 
         if (score > this.Checkmate) {
-            score += ply;
+            score += this.Position.Ply;
         }
 
         if (score < -this.Checkmate) {
-            score -= ply;
+            score -= this.Position.Ply;
         }
 
         const entry: TTEntry = {
@@ -1789,7 +1789,7 @@ class Khepri {
      * @param beta 
      * @returns 
      */
-    ProbeTT(hash: bigint, depth: number, ply: number, alpha: number, beta: number) {
+    ProbeTT(hash: bigint, depth: number, alpha: number, beta: number) {
         const entry = this.TranspositionTables.Entries[Number(hash % this.TranspositionTables.Size)];
 
         let newScore = this.HashNoMove;
@@ -1802,11 +1802,11 @@ class Khepri {
             let score = entry.Score;
 
             if (score > this.Checkmate) {
-                score -= ply;
+                score -= this.Position.Ply;
             }
 
             if (score < -this.Checkmate) {
-                score += ply;
+                score += this.Position.Ply;
             }
 
             if (entry.Flag === HashFlag.Exact) {
@@ -2272,6 +2272,9 @@ class Khepri {
             return `cp ${score}`;
         }
 
+        // Need to set this to 0 for the search
+        this.Position.Ply = 0;
+
         // The main iterative deepening search loop
         for (let depth = 1; depth <= targetDepth; depth++) {            
             pv.moves.length = 0;
@@ -2283,7 +2286,7 @@ class Khepri {
                 alpha = Math.max(score - margin, -this.Inf);
                 beta = Math.min(score + margin, this.Inf);
 
-                score = this.Negamax(depth, 0, alpha, beta, pv);
+                score = this.Negamax(depth, alpha, beta, pv);
 
                 // if the score is within the window, we don't need to widen and research
                 if (score > alpha && score < beta)
@@ -2311,7 +2314,7 @@ class Khepri {
         return bestmove;
     }
 
-    Negamax(depth: number, ply: number, alpha: number, beta: number, pvMoves: PVLine, nullMoveAllowed = true) {
+    Negamax(depth: number, alpha: number, beta: number, pvMoves: PVLine, nullMoveAllowed = true) {
         let bestScore = -this.Inf;
         let flag = HashFlag.Alpha;
         let legalMoves = 0;
@@ -2337,17 +2340,17 @@ class Khepri {
         }
 
         if (depth <= 0) {
-            return this.Quiescence(alpha, beta, ply);
+            return this.Quiescence(alpha, beta, depth);
         }
 
         // Check for 3-fold or 50 moves draw
-        if (ply > 0 && (this.IsRepetition() || this.Position.HalfMoves >= 100)) {
+        if (this.Position.Ply > 0 && (this.IsRepetition() || this.Position.HalfMoves >= 100)) {
             return 0;
         }
 
         // Check the transposition table for matching position and score
-        const { ttScore, ttMove } = this.ProbeTT(this.Position.Hash, depth, ply, alpha, beta);
-        if (ttScore !== this.HashNoMove && ply !== 0) {
+        const { ttScore, ttMove } = this.ProbeTT(this.Position.Hash, depth, alpha, beta);
+        if (ttScore !== this.HashNoMove && this.Position.Ply !== 0) {
             return ttScore;
         }
 
@@ -2371,7 +2374,7 @@ class Khepri {
                 this.MakeNullMove();
 
                 const R = 3 + Math.floor(depth / 5);
-                let score = -this.Negamax(depth - 1 - R, ply + 1, -beta, 1 - beta, childPVMoves, false);
+                let score = -this.Negamax(depth - 1 - R, -beta, 1 - beta, childPVMoves, false);
 
                 this.UnmakeNullMove();
 
@@ -2384,7 +2387,7 @@ class Khepri {
         }
 
         let moves = this.GenerateMoves();
-        moves = this.SortMoves(moves, ttMove, ply);
+        moves = this.SortMoves(moves, ttMove);
 
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
@@ -2415,16 +2418,16 @@ class Khepri {
 
                 R = Math.round(Math.max(1, R));
 
-                score = -this.Negamax(depth - 1 - R, ply + 1, -alpha - 1, -alpha, childPVMoves);
+                score = -this.Negamax(depth - 1 - R, -alpha - 1, -alpha, childPVMoves);
 
                 // Do a full search if LMR search fails high
                 if (score > alpha) {
-                    score = -this.Negamax(depth - 1, ply + 1, -beta, -alpha, childPVMoves);
+                    score = -this.Negamax(depth - 1, -beta, -alpha, childPVMoves);
                 }
             }
             // Full search if not LMR
             else {
-                score = -this.Negamax(depth - 1, ply + 1, -beta, -alpha, childPVMoves);
+                score = -this.Negamax(depth - 1, -beta, -alpha, childPVMoves);
             }
 
             this.UnmakeMove(move);
@@ -2445,14 +2448,14 @@ class Khepri {
                     if (score >= beta) {
                         if (!this.MoveIsCapture(move)) {
                             // Store the move if it's a killer
-                            this.search.killers[1][ply] = this.search.killers[0][ply];
-                            this.search.killers[0][ply] = move;
+                            this.search.killers[1][this.Position.Ply] = this.search.killers[0][this.Position.Ply];
+                            this.search.killers[0][this.Position.Ply] = move;
 
                             // increment history counter
                             this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] += depth * depth;
                         }
 
-                        this.WriteTT(this.Position.Hash, depth, HashFlag.Beta, bestScore, bestMove, ply);
+                        this.WriteTT(this.Position.Hash, depth, HashFlag.Beta, bestScore, bestMove);
                         return score;
                     }
 
@@ -2475,7 +2478,7 @@ class Khepri {
         if (legalMoves === 0) {
             // If checkmate, returns an infinity score with the current play added to it (so faster checkmates will be scored higher)
             if (inCheck) {
-                return -this.Inf + ply;
+                return -this.Inf + this.Position.Ply;
             }
             // If no available moves and not checkmate, then it's a stalemate
             else {
@@ -2483,12 +2486,12 @@ class Khepri {
             }
         }
 
-        this.WriteTT(this.Position.Hash, depth, flag, bestScore, bestMove, ply);
+        this.WriteTT(this.Position.Hash, depth, flag, bestScore, bestMove);
 
         return bestScore;
     }
 
-    Quiescence(alpha: number, beta: number, ply: number) {
+    Quiescence(alpha: number, beta: number, depth: number) {
         this.search.nodes++;
         let flag = HashFlag.Alpha;
 
@@ -2502,8 +2505,8 @@ class Khepri {
         }
 
         // Check the transposition table for matching position and score
-        const { ttScore, ttMove } = this.ProbeTT(this.Position.Hash, 0, ply, alpha, beta);
-        if (ttScore !== this.HashNoMove && ply !== 0) {
+        const { ttScore, ttMove } = this.ProbeTT(this.Position.Hash, 0, alpha, beta);
+        if (ttScore !== this.HashNoMove && this.Position.Ply !== 0) {
             return ttScore;
         }
 
@@ -2523,7 +2526,7 @@ class Khepri {
         }
 
         let moves = this.GenerateMoves(true);
-        moves = this.SortMoves(moves, bestMove, ply);
+        moves = this.SortMoves(moves, bestMove);
 
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
@@ -2533,7 +2536,7 @@ class Khepri {
                 continue;
             }
 
-            let score = -this.Quiescence(-beta, -alpha, ply);
+            let score = -this.Quiescence(-beta, -alpha, depth - 1);
 
             this.UnmakeMove(move);
 
@@ -2543,7 +2546,7 @@ class Khepri {
             }
 
             if (score >= beta) {
-                this.WriteTT(this.Position.Hash, 0, HashFlag.Beta, bestScore, bestMove, ply);
+                this.WriteTT(this.Position.Hash, 0, HashFlag.Beta, bestScore, bestMove);
                 return bestScore;
             }
 
@@ -2553,7 +2556,7 @@ class Khepri {
             }
         }
 
-        this.WriteTT(this.Position.Hash, 0, flag, bestScore, bestMove, ply);
+        this.WriteTT(this.Position.Hash, 0, flag, bestScore, bestMove);
 
         return bestScore;
     }
@@ -2581,7 +2584,7 @@ class Khepri {
      * @param moves The moves to score and sort
      * @param ttMove The best move, to place at the top of the sorted list
      */
-    SortMoves(moves: Move[], ttMove: Move, ply: number) {
+    SortMoves(moves: Move[], ttMove: Move) {
         const scores: { move: Move, score: number }[] = [];
 
         // Score moves
@@ -2605,10 +2608,10 @@ class Khepri {
                 scores.push({ move, score });
             }
             else {
-                if (move === this.search.killers[0][ply]) {
+                if (move === this.search.killers[0][this.Position.Ply]) {
                     scores.push({ move, score: 9000 });
                 }
-                else if (move === this.search.killers[1][ply]) {
+                else if (move === this.search.killers[1][this.Position.Ply]) {
                     scores.push({ move, score: 8000 });
                 }
                 else {
