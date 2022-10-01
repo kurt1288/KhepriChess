@@ -57,7 +57,7 @@ export interface IPosition {
     OccupanciesBB: [bigint, bigint]
     Squares: Piece[]
     CastlingRights: number
-    SideToMove: Color.Black | Color. White
+    SideToMove: Color.Black | Color.White
     EnPassSq: Square
     HalfMoves: number
     Ply: number
@@ -81,10 +81,6 @@ interface State {
     Hash: bigint
     PawnHash: bigint
     HalfMoves: number
-}
-
-interface StringToPiece {
-    [key: string]: { Type: Pieces, Color: Color.White | Color.Black }
 }
 
 interface Zobrist {
@@ -130,16 +126,7 @@ interface Search {
 
 class Khepri {
     constructor() {
-        this.InitRankMasks();
-        this.InitFileMasks();
-        this.InitDiagMasks();
-        this.InitAntiDiagMasks();
-        this.InitIsolatedMasks();
-        this.InitPassedMasks();
-        this.InitBetweenMasks();
-        this.InitJumperAttacks();
-        this.InitBishopAttacks();
-        this.InitRookAttacks();
+        this.Init();
         this.InitHashes();
         this.SetTransTableSize();
     }
@@ -262,20 +249,20 @@ class Khepri {
 
     private readonly PositionHistory: bigint[] = [];
 
-    private readonly CharToPiece: StringToPiece = {
-        "P": { Type: Pieces.Pawn, Color: Color.White },
-        "N": { Type: Pieces.Knight, Color: Color.White },
-        "B": { Type: Pieces.Bishop, Color: Color.White },
-        "R": { Type: Pieces.Rook, Color: Color.White },
-        "Q": { Type: Pieces.Queen, Color: Color.White },
-        "K": { Type: Pieces.King, Color: Color.White },
-        "p": { Type: Pieces.Pawn, Color: Color.Black },
-        "n": { Type: Pieces.Knight, Color: Color.Black },
-        "b": { Type: Pieces.Bishop, Color: Color.Black },
-        "r": { Type: Pieces.Rook, Color: Color.Black },
-        "q": { Type: Pieces.Queen, Color: Color.Black },
-        "k": { Type: Pieces.King, Color: Color.Black },
-    }
+    private readonly CharToPiece = new Map([
+        ["P", { Type: Pieces.Pawn, Color: Color.White }],
+        ["N", { Type: Pieces.Knight, Color: Color.White }],
+        ["B", { Type: Pieces.Bishop, Color: Color.White }],
+        ["R", { Type: Pieces.Rook, Color: Color.White }],
+        ["Q", { Type: Pieces.Queen, Color: Color.White }],
+        ["K", { Type: Pieces.King, Color: Color.White }],
+        ["p", { Type: Pieces.Pawn, Color: Color.Black }],
+        ["n", { Type: Pieces.Knight, Color: Color.Black }],
+        ["b", { Type: Pieces.Bishop, Color: Color.Black }],
+        ["r", { Type: Pieces.Rook, Color: Color.Black }],
+        ["q", { Type: Pieces.Queen, Color: Color.Black }],
+        ["k", { Type: Pieces.King, Color: Color.Black }],
+    ]);
 
     /**
      * Loads an FEN string into the engine
@@ -305,7 +292,7 @@ class Khepri {
             switch (char) {
                 case "p": case "n": case "b": case "r": case "q": case "k":
                 case "P": case "N": case "B": case "R": case "Q": case "K": {
-                    const piece: Piece = this.CharToPiece[char];
+                    const piece = this.CharToPiece.get(char) as Piece;
 
                     this.PlacePieceNoHash(piece.Type, piece.Color, square);
                     square++;
@@ -332,7 +319,7 @@ class Khepri {
         const castling = fen.split(' ')[2].split('');
         for (const castle of castling) {
             const side = castle.toUpperCase() === castle ? Color.White : Color.Black;
-            const kingSquare = this.Position.Squares.findIndex(x => x && x.Type === Pieces.King && x.Color === side);
+            const kingSquare = this.GetLS1B(this.Position.PiecesBB[side][Pieces.King]);
             this.Position.CastlingSquaresMask[kingSquare] = side === Color.White ? 12 : 3;
 
             if (castle.toUpperCase() === "K") {
@@ -751,9 +738,7 @@ class Khepri {
         }
     }
 
-    GenerateBishopAttacks(square: Square) {
-        let occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-
+    GenerateBishopAttacks(occupancy: bigint, square: Square) {
         occupancy = BigInt.asUintN(64, (occupancy & this.BishopMasks[square]));
         occupancy = BigInt.asUintN(64, occupancy * this.BishopMagicNumbers[square]);
         occupancy >>= 64n - this.BishopRelevantBits[square];
@@ -762,7 +747,7 @@ class Khepri {
     }
 
     GenerateBishopMoves(moveList: Move[], square: Square, attacked: bigint) {
-        let attacks = (this.GenerateBishopAttacks(square) & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
+        let attacks = (this.GenerateBishopAttacks(this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black], square) & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
 
         while (attacks) {
             const toSquare = this.GetLS1B(attacks);
@@ -780,9 +765,7 @@ class Khepri {
         }
     }
 
-    GenerateRookAttacks(square: Square) {
-        let occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-
+    GenerateRookAttacks(occupancy: bigint, square: Square) {
         occupancy = BigInt.asUintN(64, occupancy & this.RookMasks[square]);
         occupancy = BigInt.asUintN(64, occupancy * this.RookMagicNumbers[square]);
         occupancy >>= 64n - this.RookRelevantBits[square];
@@ -791,7 +774,7 @@ class Khepri {
     }
 
     GenerateRookMoves(moveList: Move[], square: Square, attacked: bigint) {
-        let attacks = (this.GenerateRookAttacks(square) & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
+        let attacks = (this.GenerateRookAttacks(this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black], square) & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
 
         while (attacks) {
             const toSquare = this.GetLS1B(attacks);
@@ -810,7 +793,8 @@ class Khepri {
     }
 
     GenerateQueenMoves(moveList: Move[], square: Square, attacked: bigint) {
-        let attacks = ((this.GenerateBishopAttacks(square) | this.GenerateRookAttacks(square)) & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
+        const occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
+        let attacks = ((this.GenerateBishopAttacks(occupancy, square) | this.GenerateRookAttacks(occupancy, square)) & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
 
         while (attacks) {
             const toSquare = this.GetLS1B(attacks);
@@ -883,14 +867,15 @@ class Khepri {
             return true;
         }
 
+        const occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
         const bishopQueens = bishops | queens;
         // Bishop and Rook attacks are expensive to calcuate, so check the masks first to see if the call even needs to be made
-        if (((this.diagMasks[square] | this.antiDiagMasks[square]) & bishopQueens) && this.GenerateBishopAttacks(square) & bishopQueens) {
+        if ((this.attackRays[Pieces.Bishop - Pieces.Bishop][square] & bishopQueens) && this.GenerateBishopAttacks(occupancy, square) & bishopQueens) {
             return true;
         }
         
         const rookQueens = rooks | queens;
-        if (((this.rankMasks[square] | this.fileMasks[square]) & rookQueens) && this.GenerateRookAttacks(square) & rookQueens) {
+        if ((this.attackRays[Pieces.Rook - Pieces.Bishop][square] & rookQueens) && this.GenerateRookAttacks(occupancy, square) & rookQueens) {
             return true;
         }
         if (this.KingAttacks[square] & this.Position.PiecesBB[side][Pieces.King]) {
@@ -1295,140 +1280,124 @@ class Khepri {
 
     private rankMasks: bigint[] = [];
     fileMasks: bigint[] = [];
-    private diagMasks: bigint[] = [];
-    private antiDiagMasks: bigint[] = [];
     isolatedMasks: bigint[] = [];
     passedMasks = Array(2).fill(0).map(() => Array(64).fill(0));
     private readonly betweenMasks: bigint[][] = Array(64).fill(0n).map(() => Array(64).fill(0n));
+    private readonly attackRays: bigint[][] = Array.from(Array(3), () => new Array(64).fill(0n));
+    private readonly squareBB: bigint[] = [];
 
     private readonly notAFile = 18374403900871474942n;
     private readonly notHFile = 9187201950435737471n;
     private readonly notHGFile = 4557430888798830399n;
     private readonly notABFile = 18229723555195321596n;
 
-    InitRankMasks() {
-        for (let square = 0; square < 64; square++) {
+    Init() {
+        for (let square = Square.a8; square <= Square.h1; square++) {
+            // Bitboard masks for single set square
+            this.squareBB[square] = this.SetBit(0n, square);
+
             this.rankMasks[square] = 0xffn << (BigInt(square) & 56n);
-        }
-    }
-
-    InitFileMasks() {
-        for (let square = 0; square < 64; square++) {
             this.fileMasks[square] = 0x0101010101010101n << (BigInt(square) & 7n);
-        }
-    }
-
-    InitDiagMasks() {
-        for (let square = 0; square < 64; square++) {
-            const maindia = 0x8040201008040201n;
-            const diag = BigInt((square & 7) - (square >> 3));
-            this.diagMasks[square] = diag >= 0 ? maindia >> diag*8n : maindia << -diag*8n;
-        }
-    }
-
-    InitAntiDiagMasks() {
-        for (let square = 0; square < 64; square++) {
-            const maindia = 0x0102040810204080n;
-            const diag = BigInt(7 - (square&7) - (square>>3));
-            this.antiDiagMasks[square] = diag >= 0 ? maindia >> diag*8n : maindia << -diag*8n;
-        }
-    }
-
-    InitIsolatedMasks() {
-        for (let square = 0; square < 64; square++) {
             this.isolatedMasks[square] = this.fileMasks[square] << 1n | this.fileMasks[square] >> 1n;
-        }
-    }
 
-    InitPassedMasks() {
-        for (let square = 0; square < 64; square++) {
-            let mask = this.fileMasks[square] | ((this.fileMasks[square] & this.notAFile) >> 1n) | ((this.fileMasks[square] & this.notHFile) << 1n);
-            this.passedMasks[Color.White][square] = mask;
-            this.passedMasks[Color.Black][square ^ 56] = mask;
-
-            // clear ranks behind squares
-            for (let s = square; s <= Square.h1; s += 8) {
-                this.passedMasks[Color.White][square] &= ~this.rankMasks[s];
-            }
-
-            for (let s = square; s >= Square.a8; s -= 8) {
-                this.passedMasks[Color.Black][square ^ 56] &= ~this.rankMasks[s];
-            }
-        }
-    }
-
-    /**
-     * Will return all squares after sq1 and up to and including s2, moving horizontally rank by rank (not diagonally)
-     * Not the best method, but works for castling paths
-     */
-    InitBetweenMasks() {
-        for (let sq1 = 0; sq1 < 64; sq1++) {
-            let mask = 0n;
-
-            for (let sq2 = 0; sq2 < 64; sq2++) {
-                if (sq1 === sq2) {
-                    continue;
-                }
-
-                if (sq1 < sq2) {
-                    mask = this.SetBit(0n, sq1 + 1);
-                    for (let start = sq1 + 1; start <= sq2; start++) {
-                        mask |= 0x0001n << BigInt(start);
-                    }
-                }
-                else {
-                    mask = this.SetBit(0n, sq1 - 1);
-                    for (let start = sq1 - 1; start >= sq2; start--) {
-                        mask |= 0x0001n << BigInt(start);
-                    }
-                }
-                
-
-                this.betweenMasks[sq1][sq2] = mask;
-            }
-        }
-    }
-    
-    /**
-     * Initializes jumping pieces attack arrays
-     */
-    InitJumperAttacks() {
-        for (let square = 0; square < 64; square++) {
+            /* * * * * * * * * * * * * * * * * * * *
+             *
+             * Pawn, knight, king attack masks
+             *
+             * * * * * * * * * * * * * * * * * * * */
             this.PawnAttacks[Color.White][square] = this.MaskPawnAttacks(Color.White, square);
             this.PawnAttacks[Color.Black][square] = this.MaskPawnAttacks(Color.Black, square);
-    
             this.KnightAttacks[square] = this.MaskKnightAttacks(square);
-    
             this.KingAttacks[square] = this.MaskKingAttacks(square);
-        }
-    }
-    
-    InitBishopAttacks() {
-        for (let square = 0; square < 64; square++) {
+
+            /* * * * * * * * * * * * * * * * * * * *
+             *
+             * Bishop attack masks
+             *
+             * * * * * * * * * * * * * * * * * * * */
             this.BishopMasks[square] = this.GenerateBishopMasks(square);
     
-            const relevantBitsCount = this.CountBits(this.BishopMasks[square]);
-            const occupancyIndicies = 1 << relevantBitsCount;
+            let relevantBitsCount = this.CountBits(this.BishopMasks[square]);
+            let occupancyIndicies = 1 << relevantBitsCount;
     
             for (let i = 0; i < occupancyIndicies; i++) {
                 const occupancy = this.SetOccupancy(i, relevantBitsCount, this.BishopMasks[square]);
                 const magicIndex = BigInt.asUintN(64, (occupancy * this.BishopMagicNumbers[square])) >> (64n - this.BishopRelevantBits[square])
                 this.BishopAttacks[square][Number(magicIndex)] = this.GenerateBishopAttacksFly(square, occupancy);
             }
-        }
-    }
-    
-    InitRookAttacks() {
-        for (let square = 0; square < 64; square++) {
+
+            /* * * * * * * * * * * * * * * * * * * *
+             *
+             * Rook attack masks
+             *
+             * * * * * * * * * * * * * * * * * * * */
             this.RookMasks[square] = this.GenerateRookMasks(square);
-    
-            const relevantBitsCount = this.CountBits(this.RookMasks[square]);
-            const occupancyIndicies = 1 << relevantBitsCount;
+        
+            relevantBitsCount = this.CountBits(this.RookMasks[square]);
+            occupancyIndicies = 1 << relevantBitsCount;
     
             for (let i = 0; i < occupancyIndicies; i++) {
                 const occupancy = this.SetOccupancy(i, relevantBitsCount, this.RookMasks[square]);
                 const magicIndex = BigInt.asUintN(64, (occupancy * this.RookMagicNumbers[square])) >> (64n - this.RookRelevantBits[square])
                 this.RookAttacks[square][Number(magicIndex)] = this.GenerateRookAttacksFly(square, occupancy);
+            }
+
+            /* * * * * * * * * * * * * * * * * * * * * * * * *
+             *
+             * Mask sliding piece attacks on an empty board
+             *
+             * * * * * * * * * * * * * * * * * * * * * * * * */
+            this.attackRays[Pieces.Bishop - Pieces.Bishop][square] = this.GenerateBishopAttacks(0n, square);
+            this.attackRays[Pieces.Queen - Pieces.Bishop][square] |= this.attackRays[Pieces.Bishop - Pieces.Bishop][square];
+            this.attackRays[Pieces.Rook - Pieces.Bishop][square] = this.GenerateRookAttacks(0n, square);
+            this.attackRays[Pieces.Queen - Pieces.Bishop][square] |= this.attackRays[Pieces.Rook - Pieces.Bishop][square];
+
+            /* * * * * * * * * * * * *
+             *
+             * Passed pawn masks
+             *
+             * * * * * * * * * * * * */
+            let mask = this.fileMasks[square] | ((this.fileMasks[square] & this.notAFile) >> 1n) | ((this.fileMasks[square] & this.notHFile) << 1n);
+            this.passedMasks[Color.White][square] = mask;
+            this.passedMasks[Color.Black][square ^ 56] = mask;
+
+            /* * * * * * * * * * * * *
+             *
+             * Between masks
+             *
+             * * * * * * * * * * * * */
+            mask = 0n;
+
+            for (let sq2 = 0; sq2 < 64; sq2++) {
+                if (square === sq2) {
+                    continue;
+                }
+
+                if (square < sq2) {
+                    mask = this.SetBit(0n, square + 1);
+                    for (let start = square + 1; start <= sq2; start++) {
+                        mask |= 0x0001n << BigInt(start);
+                    }
+                }
+                else {
+                    mask = this.SetBit(0n, square - 1);
+                    for (let start = square - 1; start >= sq2; start--) {
+                        mask |= 0x0001n << BigInt(start);
+                    }
+                }
+
+                this.betweenMasks[square][sq2] = mask;
+            }
+        }
+
+        // Clear ranks behind squares in passed pawn masks
+        for (let square = Square.a8; square <= Square.h1; square++) {
+            for (let s = square; s <= Square.h1; s += 8) {
+                this.passedMasks[Color.White][square] &= ~this.rankMasks[s];
+            }
+
+            for (let s = square; s >= Square.a8; s -= 8) {
+                this.passedMasks[Color.Black][square ^ 56] &= ~this.rankMasks[s];
             }
         }
     }
@@ -2692,26 +2661,28 @@ class Khepri {
                         | ((this.Position.PiecesBB[Color.Black][Pieces.Pawn] & this.PawnAttacks[Color.White][square]));
         const knights = (this.Position.PiecesBB[Color.White][Pieces.Knight] | this.Position.PiecesBB[Color.Black][Pieces.Knight]) & this.KnightAttacks[square];
         const kings = (this.Position.PiecesBB[Color.White][Pieces.King] | this.Position.PiecesBB[Color.Black][Pieces.King]) & this.KingAttacks[square];
+        const occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
 
         let bishopQueens = this.Position.PiecesBB[Color.White][Pieces.Bishop] | this.Position.PiecesBB[Color.Black][Pieces.Bishop]
                         | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
-        bishopQueens &= this.GenerateBishopAttacks(square);
+        bishopQueens &= this.GenerateBishopAttacks(occupancy, square);
 
         let rookQueens = this.Position.PiecesBB[Color.White][Pieces.Rook] | this.Position.PiecesBB[Color.Black][Pieces.Rook]
                         | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
-        rookQueens &= this.GenerateRookAttacks(square);
+        rookQueens &= this.GenerateRookAttacks(occupancy, square);
 
         return pawns | knights | kings | bishopQueens | rookQueens;
     }
 
     ConsiderXRays(square: Square) {
+        const occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
         let bishopQueens = this.Position.PiecesBB[Color.White][Pieces.Bishop] | this.Position.PiecesBB[Color.Black][Pieces.Bishop]
                         | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
-        bishopQueens &= this.GenerateBishopAttacks(square);
+        bishopQueens &= this.GenerateBishopAttacks(occupancy, square);
 
         let rookQueens = this.Position.PiecesBB[Color.White][Pieces.Rook] | this.Position.PiecesBB[Color.Black][Pieces.Rook]
                         | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
-        rookQueens &= this.GenerateRookAttacks(square);
+        rookQueens &= this.GenerateRookAttacks(occupancy, square);
 
         return bishopQueens | rookQueens;
     }
