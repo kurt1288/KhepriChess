@@ -2356,6 +2356,10 @@ class Khepri {
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
 
+            if (this.See(move) < 0) {
+                continue;
+            }
+
             if (!this.MakeMove(move)) {
                 this.UnmakeMove(move);
                 continue;
