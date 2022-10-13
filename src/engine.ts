@@ -2217,8 +2217,15 @@ class Khepri {
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
 
+            const capture = this.MoveIsCapture(move);
+
             // Futility pruning
-            if (canFutilityPrune && legalMoves > 1 && !this.MoveIsCapture(move) && !this.MoveIsPromotion(move)) {
+            if (canFutilityPrune && legalMoves > 1 && !capture && !this.MoveIsPromotion(move)) {
+                continue;
+            }
+
+            // Skip bad captures
+            if (!inCheck && capture && this.See(move) < -300 * depth) {
                 continue;
             }
 
