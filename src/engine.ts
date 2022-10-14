@@ -2344,17 +2344,28 @@ class Khepri {
 
         let bestMove = ttMove;
         let bestScore = ttScore;
+        let futilityValue = bestScore;
 
-        if (bestScore === this.HashNoMove) {
-            bestScore = this.Evaluate();
+        const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
+
+        if (inCheck) {
+            bestScore = -this.Inf;
+            futilityValue = bestScore;
         }
+        else {
+            if (bestScore === this.HashNoMove) {
+                bestScore = this.Evaluate();
+            }
+    
+            if (bestScore >= beta) {
+                return bestScore;
+            }
+    
+            if (bestScore > alpha) {
+                alpha = bestScore;
+            }
 
-        if (bestScore >= beta) {
-            return bestScore;
-        }
-
-        if (bestScore > alpha) {
-            alpha = bestScore;
+            futilityValue = bestScore + 150;
         }
 
         let moves = this.GenerateMoves(true);
@@ -2362,6 +2373,17 @@ class Khepri {
 
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
+
+            if (!inCheck && !this.MoveIsPromotion(move)) {
+                const value = futilityValue + this.EGPieceValue[this.Position.Squares[(move & 0xfc0) >> 6]?.Type ?? Pieces.Pawn];
+
+                if (value <= alpha) {
+                    if (bestScore < value) {
+                        bestScore = value;
+                    }
+                    continue;
+                }
+            }
 
             if (this.See(move) < 0) {
                 continue;
@@ -2390,6 +2412,10 @@ class Khepri {
                 flag = HashFlag.Exact;
                 alpha = score;
             }
+        }
+
+        if (inCheck && bestScore === -this.Inf) {
+            return -this.Inf + this.Position.Ply;
         }
 
         this.WriteTT(0, flag, bestScore, bestMove);
