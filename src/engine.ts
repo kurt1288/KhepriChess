@@ -424,6 +424,9 @@ class Khepri {
 
         this.PositionHistory.length = 0;
         this.PositionHistory[0] = this.Position.Hash;
+
+        this.KingSquares[0] = 0;
+        this.KingSquares[1] = 0;
     }
 
     /**
@@ -897,10 +900,6 @@ class Khepri {
             this.MovePiece(piece, from, to);
 
             this.Position.Hash ^= this.Zobrist.Pieces[piece.Color][piece.Type][from] ^ this.Zobrist.Pieces[piece.Color][piece.Type][to];
-
-            if (piece.Type === Pieces.King) {
-                this.Position.PawnHash ^= this.Zobrist.Pieces[piece.Color][piece.Type][from] ^ this.Zobrist.Pieces[piece.Color][piece.Type][to];
-            }
     
             if (piece.Type === Pieces.Pawn) {
                 this.Position.HalfMoves = 0;
@@ -1134,13 +1133,14 @@ class Khepri {
      * 
      **************************/
 
-    private rankMasks: bigint[] = [];
+    rankMasks: bigint[] = [];
     fileMasks: bigint[] = [];
     isolatedMasks: bigint[] = [];
     passedMasks = Array(2).fill(0).map(() => Array(64).fill(0));
     private readonly betweenMasks: bigint[][] = Array(64).fill(0n).map(() => Array(64).fill(0n));
-    private readonly attackRays: bigint[][] = Array.from(Array(3), () => new Array(64).fill(0n));
-    private readonly squareBB: bigint[] = [];
+    readonly attackRays: bigint[][] = Array.from(Array(3), () => new Array(64).fill(0n));
+    readonly squareBB: bigint[] = [];
+    readonly distanceBetween: Square[][] = Array(64).fill(0n).map(() => Array(64).fill(0n));
 
     private readonly notAFile = 18374403900871474942n;
     private readonly notHFile = 9187201950435737471n;
@@ -1219,12 +1219,19 @@ class Khepri {
 
             /* * * * * * * * * * * * *
              *
-             * Between masks
+             * Between and distance masks
              *
              * * * * * * * * * * * * */
             mask = 0n;
 
             for (let sq2 = 0; sq2 < 64; sq2++) {
+                const sq1Rank = square >> 3;
+                const sq2Rank = sq2 >> 3;
+                const sq1File = square & 7;
+                const sq2File = sq2 & 7;
+
+                this.distanceBetween[square][sq2] = Math.max(Math.abs(sq2Rank - sq1Rank), Math.abs(sq2File - sq1File));
+
                 if (square === sq2) {
                     continue;
                 }
@@ -1657,8 +1664,8 @@ class Khepri {
      **************************/
 
     readonly PawnAttacks: bigint[][] = Array.from(Array(2), () => new Array(64));
-    private readonly KnightAttacks: bigint[] = [];
-    private readonly KingAttacks: bigint[] = [];
+    readonly KnightAttacks: bigint[] = [];
+    readonly KingAttacks: bigint[] = [];
     private readonly BishopMasks: bigint[] = Array(64);
     private readonly BishopAttacks: bigint[][] = Array.from(Array(64), () => new Array(512));
     private readonly RookMasks: bigint[] = Array(64);
@@ -1712,184 +1719,201 @@ class Khepri {
      * 
      **************************/
 
-    readonly MGPieceValue = [83 ,334, 360, 463, 951, 15000];
-    readonly EGPieceValue = [91, 251, 281, 515, 975, 15000];
+    readonly MGPieceValue = [80, 321, 328, 447, 912, 15000];
+    readonly EGPieceValue = [102, 256, 271, 472, 911, 15000];
 
     PST = [
         // opening/middle game values
         [
             // pawn
             [
-                  0,   0,    0,   0,   0,   0,   0,    0,
-                -45, -46, -116, -20, -20, -47, -53, -116,
-                  3,  -9,   26,  -7,  22,  86,  -4,  -13,
-                 -6,   6,    7,  23,  25,  24,   2,  -21,
-                -21,  -3,    2,  17,  21,   4,  -9,  -27,
-                -17,  -6,    2,  -6,   5,   1,  20,  -11,
-                -27,  -4,  -16, -20, -13,  21,  21,  -20,
-                  0,   0,    0,   0,   0,   0,   0,    0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                24, 24, 16, 16, 9, 10, 7, 6,
+                0, 11, 12, 8, 13, 21, 10, -6,
+                -23, 4, -5, 12, 16, 3, 5, -26,
+                -28, -13, -6, 3, 6, 0, 0, -30,
+                -24, -13, -9, -10, 0, -2, 21, -15,
+                -28, -8, -25, -17, -12, 11, 28, -21,
+                0, 0, 0, 0, 0, 0, 0, 0,
             ],
             
             // knight
             [
-                -227, -79, -67, -75,  13, -113, -113, -131,
-                 -81, -56,  42,  26,  72,   42,    6,  -19,
-                 -27,   7,  25,  71,  73,  113,   68,   13,
-                   4,   9,   6,  40,  26,   49,   13,   13,
-                 -18, -10,  14,   5,  21,   20,    9,  -30,
-                 -30, -12,   4,  14,  15,    7,   16,  -28,
-                 -27, -35,  -9,  -3,  -1,   15,  -18,  -19,
-                 -37, -17, -51, -20, -32,  -21,  -16,  -68,
+                -11, -2, -1, -1, 1, -4, -1, -5,
+                -9, -4, 5, 4, 2, 4, 0, -2,
+                -6, 9, 3, 11, 14, 13, 12, 5,
+                2, 0, -1, 18, 6, 20, 9, 18,
+                0, -1, -3, -10, 3, -3, 8, 8,
+                -10, -14, -10, -5, 6, -2, 4, -6,
+                -5, -5, -19, -1, -3, 0, -1, 4,
+                -5, -2, -6, -5, 0, 3, -2, -3,
             ],
 
             // bishop
             [
-                -25, -40, -24, -41, -73, -41,  5, -51,
-                -40,   3, -15,   8,  22,  63,  8,  18,
-                -13,  -4,  56,  13,  66,  58, 31,  19,
-                -23,   3,   8,  21,  25,  10, 10,  -6,
-                -16,   9,  15,  34,  32,  16, 22, -23,
-                 16,  29,  12,  18,  17,  26, 25,  19,
-                -12,  23,  16,   5,   9,  30, 34,   5,
-                  9, -16,  -7,  -6, -16, -10,  4, -15,
+                -4, 0, -4, -2, -1, -1, -1, -1,
+                -8, -3, -6, -4, 2, 1, -2, -13,
+                -10, 0, 3, 5, 4, 11, 5, 4,
+                -8, -5, 2, 16, 7, 10, -1, -3,
+                0, 3, -4, 7, 13, -9, -5, 8,
+                -1, 11, 4, -2, -1, 5, 7, 1,
+                6, 7, 8, -4, 0, 9, 22, -1,
+                -11, 1, -1, -4, 2, -5, -3, -6,
             ],
 
             // rook
             [
-                  6,   2,  10,   2,  27,  26,   9,  -9,
-                -15, -19,  -3,  43,  12,  33,  62,  32,
-                -10, -7,   -7,   5,   4,  21,  21,  20,
-                -31, -17,   5,   5,  -2,  21,  19,  14,
-                -31, -25, -24, -24, -16, -13,   4, -29,
-                -31, -25, -18,  -3,  -3,  -5,   3,  -3,
-                -32, -20, -21, -11, -11,   2,   0, -49,
-                 -9, -12,  -2,  10,  11,   8, -42, -15,
+                4, 4, 3, 6, 6, 2, 3, 4,
+                3, 3, 10, 9, 9, 8, 4, 5,
+                -4, 6, 2, 8, 1, 7, 6, 2,
+                -8, -6, 1, -1, 3, 8, -1, 1,
+                -17, -9, -9, -6, -5, -7, 1, -12,
+                -22, -14, -12, -9, -6, -4, -2, -12,
+                -23, -11, -12, -5, -2, 1, -1, -30,
+                -3, -7, -4, 4, 9, 12, -20, -3,
             ],
 
             // queen
             [
-                -54,  -9,  20,  31,  32,  78,   1, -15,
-                -49, -52, -20, -39, -11,  76,  30, 142,
-                -29, -24,   4,  21,  52,  74,  72,  73,
-                -29, -14, -12,  -4,   4,  20,   5,  19,
-                -4,   -4,  -3,  -3,   4,   5,  20,   3,
-                -14,   8,  -2,   9,   1,  10,  10,  -1,
-                -19,   2,  14,   9,  14,  21,  20,  11,
-                10,   -8,   0,  16,   4, -16, -35,  -7,
+                -5, 2, 4, 2, 6, 3, 3, 5,
+                -13, -23, 2, 6, 4, 10, 5, 12,
+                -7, -6, -2, 3, 12, 16, 17, 22,
+                -10, -11, -5, -5, 7, 6, 9, 14,
+                -5, -13, -9, -8, -1, 3, 8, 5,
+                -9, -5, -2, -5, -5, 5, 2, 4,
+                -14, -8, 3, 7, 8, 6, -7, 2,
+                -6, -10, -4, 13, -3, -13, -5, -6,
             ],
 
             // king
             [
-                 76,  13,  13,  13,  77,  13, -19,  13,
-                 13,  13,  13,  11,  13,  13, -49, -19,
-                -19,  76,  13,  13, -22,  13,  13, -19,
-                -19, -19,  13,  -9, -65, -35, -19, -51,
-                 -9,  -9, -19, -40, -43, -56, -34, -42,
-                 -1,   0, -45, -61, -46, -39, -17, -17,
-                 35,  -4, -16, -73, -44, -16,  12,  18,
-                -31,  31,   6, -62,   6, -31,  30,  56,
+                -1, 0, 0, 0, 0, 0, 1, 0,
+                0, 2, 1, 2, 2, 2, 1, 0,
+                1, 3, 3, 3, 2, 6, 5, 1,
+                0, 2, 4, 3, 3, 4, 3, -3,
+                -3, 1, 3, 1, 1, 0, -3, -9,
+                -2, 0, 1, -3, -2, -6, -2, -11,
+                -2, -1, -3, -25, -25, -13, 13, 14,
+                -14, 14, 10, -29, 7, -27, 30, 9,
             ]
         ],
         // end game values
         [
             // pawn
             [
-                 0,  0,   0,   0,   0,  0,  0,   0,
-                67, 63,  64,  16,   1, 16, 45,  46,
-                50, 55,  34,  17,   4,  8, 37,  45,
-                15, 14,   2, -14, -13, -9, 10,   7,
-                 5,  5, -10, -18, -16, -9,  3,  -4,
-                -6,  1, -11,  -5,  -5, -4, -7, -13,
-                 3,  0,   6,  -5,  -3, -3, -3, -11,
-                 0,  0,   0,   0,   0,  0,  0,   0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                50, 47, 35, 28, 25, 25, 31, 39,
+                35, 32, 22, 5, 2, 9, 22, 21,
+                8, 0, -11, -27, -27, -21, -8, -10,
+                -4, -4, -19, -26, -26, -24, -17, -19,
+                -14, -9, -19, -17, -18, -19, -24, -26,
+                -7, -9, -5, -11, -8, -18, -22, -26,
+                0, 0, 0, 0, 0, 0, 0, 0,
             ],
 
             // knight
             [
-                 20, -24,  2,  1,  1, -14,  -25, -75,
-                 -8,  16,  5,  7,  4,  -2,  -14, -25,
-                 -6,   9, 40, 34, 19,  23,   7,    1,
-                  4,  37, 47, 48, 42,  31,  19,   11,
-                  7,  25, 44, 46, 45,  26,  14,   20,
-                  9,  17, 22, 48, 46,  21,  10,    0,
-                 -1,   4,  7, 26, 23,  19,   5,   10,
-                -37, -38,  1,  1,  3,  30, -37,  -37,
+                -10, -3, 0, -3, 1, -6, -4, -7,
+                -5, 3, -3, 6, 1, -4, -2, -5,
+                -5, -2, 2, 1, 1, 1, 1, -3,
+                1, 7, 7, 5, 7, 5, 8, 5,
+                -1, 0, 2, 9, 3, 3, 6, -1,
+                -3, -3, -11, 2, -4, -17, -4, -2,
+                -3, -2, -7, -5, 1, -7, 0, -2,
+                -5, -13, -4, 0, -2, -4, -9, -4,
             ],
 
             // bishop
             [
-                 -5, -14,  -7,  5, 10,  1,  -7,   3,
-                  2,   7,  12,  2, 12,  3,   3, -30,
-                  7,  20,  19, 24, 14, 28,  12,  14,
-                 16,  22,  26, 29, 32, 16,  19,   2,
-                 12,  14,  26, 29, 21, 25,   3,   3,
-                  4,  11,  34, 26, 35, 20,  -6,  -3,
-                  1,  -9,  10, 14, 25, 10,   7, -11,
-                -18,  10, -10,  2,  9,  6, -14,   3,
+                -4, -2, -4, -2, -1, -2, -2, -3,
+                -3, -1, 0, -7, 0, -3, -4, -7,
+                1, -1, 0, 0, 0, 3, 1, 2,
+                -2, 4, 4, 11, 5, 4, -1, 1,
+                -1, -2, 7, 9, 2, 3, -3, -1,
+                1, 0, 2, 5, 6, -3, -1, 1,
+                -3, -11, -7, -1, 1, -5, -7, -4,
+                -9, -1, -6, -2, -2, -4, -4, -5,
             ],
 
             // rook
             [
-                 21, 20, 18,  17,  11,   6,   8,  12,
-                 15, 20, 19,   3,   6,   8,  -7,  -1,
-                  9,  9,  7,   3,   1,   2,   2,  -7,
-                  6,  2,  4,   0,  -1,  -1,  -9,  -6,
-                  2,  0,  4,   3,   1,  -3, -11,  -5,
-                -11, -5, -7, -13, -15, -12, -20, -21,
-                -11, -8, -6,  -9, -12, -10, -14,  -4,
-                -11, -2, -4, -12, -16,  -9,  10, -30,
+                11, 9, 11, 13, 11, 7, 9, 7,
+                12, 13, 14, 13, 9, 7, 8, 8,
+                5, 7, 5, 5, 0, 1, 2, -2,
+                -2, 0, 5, -2, -1, 2, -2, 0,
+                -1, -2, 1, -4, -6, -8, -6, -8,
+                -8, -5, -9, -7, -11, -13, -6, -10,
+                -7, -7, -5, -6, -9, -9, -7, -8,
+                -10, -3, 0, -7, -12, -13, -3, -21,
             ],
 
             // queen
             [
-                 31,  16,  18,  25,  26,  13,   1,   39,
-                 34,  22,  22,  73,  41,  44,  46, -111,
-                -10,   3,  24,  20,  50,   9,   9,  -27,
-                -13,  16,  13,  33,  61,  50,  37,    5,
-                -11,   8,  13,  45,  37,  27,  20,    1,
-                -29, -27,  24,  -4,  22,   9,  20,   -9,
-                 -9,  -5, -12, -10, -11, -24, -38,  -37,
-                -20, -33, -25, -31, -28, -33, -31,  -53,
+                -5, 2, 4, 3, 6, 4, 2, 4,
+                -8, -5, 4, 7, 7, 7, 3, 4,
+                -5, -3, 0, 7, 11, 11, 7, 9,
+                -6, -1, 1, 8, 12, 6, 9, 8,
+                -7, -2, 3, 13, 8, 6, 6, 4,
+                -5, -8, 1, -3, 0, 1, 3, 2,
+                -7, -7, -14, -11, -9, -5, -6, -1,
+                -6, -8, -7, -17, -5, -9, -4, -5,
             ],
 
             // king
             [
-                -57, -21, -23, -15, -16,   1,  -4,  -45,
-                -20,   9,   0,   0,   0,  23,  23,   -4,
-                -14,  10,   8,   6,  12,  29,  32,    1,
-                -28,   3,  12,  16,  23,  24,  15,    0,
-                -36,  -8,  13,  19,  21,  21,   4,  -17,
-                -33,  -9,   9,  18,  18,  12,   1,  -18,
-                -40, -15,   1,   9,   8,  -2, -16,  -34,
-                -48, -42, -26, -15, -41, -21, -47, -168,
+                -3, -2, -2, -1, 0, 1, 2, -2,
+                -2, 6, 6, 6, 6, 12, 7, 0,
+                1, 12, 14, 12, 11, 23, 21, 3,
+                -4, 9, 18, 23, 17, 21, 14, -5,
+                -11, -4, 14, 20, 19, 15, 2, -18,
+                -13, -5, 7, 14, 15, 9, 0, -16,
+                -16, -9, 2, 6, 10, 3, -11, -25,
+                -22, -25, -16, -15, -25, -12, -35, -44,
             ]
         ]
     ];
 
     private readonly PhaseValues = [0, 1, 1, 2, 4, 0];
-    readonly MGdoubledPenalty = 4;
+    readonly MGdoubledPenalty = 3;
     readonly EGdoubledPenalty = 10;
-    readonly MGisolatedPenalty = 20;
-    readonly EGisolatedPenalty = 5;
-    readonly MGfileSemiOpenScore = 25;
-    readonly MGfileOpenScore = 49;
-    readonly MGpassedBonus = [0, 5, -2, -2, 14, 34, 106, 0];
-    readonly EGpassedBonus = [0, -4, 2, 20, 39, 73, 131, 0];
-    readonly MGrookQueenFileBonus = 9;
-    readonly MGKnightOutpostBonus = 13;
-    readonly EGKnightOutpostBonus = 10;
+    readonly MGisolatedPenalty = 16;
+    readonly EGisolatedPenalty = 4;
+    readonly MGfileSemiOpenScore = 17;
+    readonly MGfileOpenScore = 34;
+    readonly MGpassedBonus = [0, 1, -4, -7, 11, 37, 55, 0];
+    readonly EGpassedBonus = [0, -9, -3, 17, 35, 53, 67, 0];
+    readonly MGrookQueenFileBonus = 11;
+    readonly MGKnightOutpostBonus = 23;
+    readonly EGKnightOutpostBonus = 14;
+    readonly MGBishopOutpostBonus = 21;
+    readonly EGBishopOutpostBonus = 0;
     readonly MGCorneredBishopPenalty = 25;
     readonly EGCorneredBishopPenalty = 40;
+    readonly MGKingSemiOpenPenalty = 6;
+    readonly MGBishopPairBonus = 25;
+    readonly EGBishopPairBonus = 30;
+
+    readonly MGKnightMobility = [0,0,-23,-11,-9,0,15,0,24];
+    readonly MGBishopMobility = [0,-2,-28,-15,-8,0,5,13,17,18,21,23,11,8];
+    readonly MGRookMobility = [0,0,-31,-25,-22,-17,-14,-12,-11,-8,-1,2,10,17,16];
+    readonly MGQueenMobility = [0,0,0,0,-1,-5,-10,-11,-13,-9,-8,-8,-5,-3,-2,0,4,5,6,6,9,11,12,12,10,7,2,2];
+    readonly EGKnightMobility = [0,0,-25,-32,-18,0,-6,0,11];
+    readonly EGBishopMobility = [0,-1,-28,-29,-21,-16,-6,-1,6,8,11,10,11,10];
+    readonly EGRookMobility = [0,0,-26,-29,-19,-13,-6,-2,4,6,7,10,9,11,8];
+    readonly EGQueenMobility = [0,0,0,0,0,-1,-2,-3,-7,-8,-13,-13,-16,-15,-8,-4,-3,4,9,9,15,11,16,16,11,9,3,2];
 
     readonly PhaseTotal = (this.PhaseValues[Pieces.Knight] * 4) + (this.PhaseValues[Pieces.Bishop] * 4) + (this.PhaseValues[Pieces.Rook] * 4) + (this.PhaseValues[Pieces.Queen] * 2);
+
+    readonly KingSquares = [0, 0];
 
     Evaluate() {
         let mgScores = [0, 0];
         let egScores = [0, 0];
         let phase = this.Position.Phase;
+        const bishopCount = [0, 0];
+        const allOccupancies = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
 
-        let board = (this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black])
-                    & ~(this.Position.PiecesBB[Color.White][Pieces.Pawn] | this.Position.PiecesBB[Color.Black][Pieces.Pawn]);
+        let board = allOccupancies & ~(this.Position.PiecesBB[Color.White][Pieces.Pawn] | this.Position.PiecesBB[Color.Black][Pieces.Pawn]);
 
         const pawnHash = this.PawnHashTable.Entries[Number(this.Position.PawnHash % this.PawnHashTable.Size)];
 
@@ -1920,6 +1944,8 @@ class Khepri {
             }
         }
 
+        const outpostRanks = [this.rankMasks[Square.a4] | this.rankMasks[Square.a5] | this.rankMasks[Square.a6], this.rankMasks[Square.a3] | this.rankMasks[Square.a4] | this.rankMasks[Square.a5]];
+
         while (board) {
             let square = this.GetLS1B(board);
             let actualSquare = square;
@@ -1931,23 +1957,44 @@ class Khepri {
                 square ^= 56;
             }
 
-            switch (piece.Type) {
-                case Pieces.Knight: {
-                    mgScores[piece.Color] += this.PST[0][Pieces.Knight][square] + this.MGPieceValue[Pieces.Knight];
-                    egScores[piece.Color] += this.PST[1][Pieces.Knight][square] + this.EGPieceValue[Pieces.Knight];
+            // PST scores
+            mgScores[piece.Color] += this.PST[0][piece.Type][square] + this.MGPieceValue[piece.Type];
+            egScores[piece.Color] += this.PST[1][piece.Type][square] + this.EGPieceValue[piece.Type];
 
-                    // Knight outposts
-                    if (this.PawnAttacks[piece.Color ^ 1][actualSquare] & this.Position.PiecesBB[piece.Color][Pieces.Pawn]
-                        && (this.PawnAttacks[piece.Color][actualSquare] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n) {
+            switch (piece.Type) {
+                case Pieces.Knight:{
+                    // Outposts
+                    if ((outpostRanks[piece.Color] & this.squareBB[actualSquare])
+                        && (this.passedMasks[piece.Color][actualSquare] & ~this.fileMasks[actualSquare] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n
+                        && this.PawnAttacks[piece.Color ^ 1][actualSquare] & this.Position.PiecesBB[piece.Color][Pieces.Pawn]) {
                         mgScores[piece.Color] += this.MGKnightOutpostBonus;
                         egScores[piece.Color] += this.EGKnightOutpostBonus;
                     }
 
+                    const attacks = this.KnightAttacks[actualSquare];
+                    const mobility = this.CountBits(attacks);
+
+                    mgScores[piece.Color] += this.MGKnightMobility[mobility];
+                    egScores[piece.Color] += this.EGKnightMobility[mobility];
+
                     break;
                 }
                 case Pieces.Bishop: {
-                    mgScores[piece.Color] += this.PST[0][Pieces.Bishop][square] + this.MGPieceValue[Pieces.Bishop];
-                    egScores[piece.Color] += this.PST[1][Pieces.Bishop][square] + this.EGPieceValue[Pieces.Bishop];
+                    bishopCount[piece.Color]++;
+
+                    const attacks = this.GenerateBishopAttacks(allOccupancies, actualSquare);
+                    const mobility = this.CountBits(attacks);
+
+                    mgScores[piece.Color] += this.MGBishopMobility[mobility];
+                    egScores[piece.Color] += this.EGBishopMobility[mobility];
+
+                    // Outposts
+                    if ((outpostRanks[piece.Color] & this.squareBB[actualSquare])
+                        && (this.passedMasks[piece.Color][actualSquare] & ~this.fileMasks[actualSquare] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n
+                        && this.PawnAttacks[piece.Color ^ 1][actualSquare] & this.Position.PiecesBB[piece.Color][Pieces.Pawn]) {
+                        mgScores[piece.Color] += this.MGBishopOutpostBonus;
+                        egScores[piece.Color] += this.EGBishopOutpostBonus;
+                    }
 
                     // An idea from Stockfish - If the bishop is on a corner square and blocked diagonally by a friendly pawn it deserves a penalty
                     if (this.isChess960 && (square === Square.a1 || square === Square.h1)) {
@@ -1966,17 +2013,21 @@ class Khepri {
                     break;
                 }
                 case Pieces.Rook: {
-                    mgScores[piece.Color] += this.PST[0][Pieces.Rook][square] + this.MGPieceValue[Pieces.Rook];
-                    egScores[piece.Color] += this.PST[1][Pieces.Rook][square] + this.EGPieceValue[Pieces.Rook];
+                    const attacks = this.GenerateRookAttacks(allOccupancies, actualSquare);
+                    const mobility = this.CountBits(attacks);
 
-                    // open file bonus
-                    if (((this.Position.PiecesBB[piece.Color][Pieces.Pawn] | this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) & this.fileMasks[square]) === 0n) {
-                        mgScores[piece.Color] += this.MGfileOpenScore;
-                    }
+                    mgScores[piece.Color] += this.MGRookMobility[mobility];
+                    egScores[piece.Color] += this.EGRookMobility[mobility];
 
-                    // semi-open file bonus
-                    if ((this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn] & this.fileMasks[square]) && (this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
-                        mgScores[piece.Color] += this.MGfileSemiOpenScore;
+                    // Semi-open file
+                    if ((this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
+                        // If the file also doesn't have enemy pawns, it's an open file
+                        if ((this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
+                            mgScores[piece.Color] += this.MGfileOpenScore;
+                        }
+                        else {
+                            mgScores[piece.Color] += this.MGfileSemiOpenScore;
+                        }
                     }
 
                     // Bonus if rook is on the same file as opponent's queen
@@ -1986,16 +2037,40 @@ class Khepri {
                     break;
                 }
                 case Pieces.Queen: {
-                    mgScores[piece.Color] += this.PST[0][Pieces.Queen][square] + this.MGPieceValue[Pieces.Queen];
-                    egScores[piece.Color] += this.PST[1][Pieces.Queen][square] + this.EGPieceValue[Pieces.Queen];
+                    const attacks = this.GenerateBishopAttacks(allOccupancies, actualSquare) | this.GenerateRookAttacks(allOccupancies, actualSquare);
+                    const mobility = this.CountBits(attacks);
+
+                    mgScores[piece.Color] += this.MGQueenMobility[mobility];
+                    egScores[piece.Color] += this.EGQueenMobility[mobility];
+
                     break;
                 }
                 case Pieces.King: {
-                    mgScores[piece.Color] += this.PST[0][Pieces.King][square] + this.MGPieceValue[Pieces.King];
-                    egScores[piece.Color] += this.PST[1][Pieces.King][square] + this.EGPieceValue[Pieces.King];
+                    if (actualSquare !== this.KingSquares[piece.Color]) {
+                        this.KingSquares[piece.Color] = actualSquare;
+                        const file = Math.min(Math.max(square & 7, 1), 6);
+                        let j = 1;
+    
+                        for (let i = file - 1; i <= file + 1; i++) {
+                            if ((this.fileMasks[i] & this.Position.PiecesBB[piece.Color][Pieces.Pawn]) === 0n) {
+                                mgScores[piece.Color] -= this.MGKingSemiOpenPenalty * j * j;
+                                j++;
+                            }
+                        }
+                    }
+
                     break;
                 }
             }
+        }
+
+        if (bishopCount[Color.White] >= 2) {
+            mgScores[Color.White] += this.MGBishopPairBonus;
+            egScores[Color.White] += this.EGBishopPairBonus;
+        }
+        if (bishopCount[Color.Black] >= 2) {
+            mgScores[Color.Black] += this.MGBishopPairBonus;
+            egScores[Color.Black] += this.EGBishopPairBonus;
         }
 
         phase = ((phase * 256 + (this.PhaseTotal / 2)) / this.PhaseTotal) | 0;

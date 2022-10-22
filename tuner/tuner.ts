@@ -6,7 +6,7 @@
 
 import { readFileSync, createWriteStream } from 'fs';
 import path from 'path';
-import Engine, { Pieces } from '../src/engine';
+import Engine, { Color, Pieces, Square } from '../src/engine';
 
 enum Outcome {
     BlackWin = 0.0,
@@ -40,6 +40,19 @@ interface Indexes {
     MG_RookQueen_Index: number
     MG_KnightOutpost_Index: number
     EG_KnightOutpost_Index: number
+    MG_BishopOutpost_Index: number
+    EG_BishopOutpost_Index: number
+    KingSemiOpen_Index: number
+    MG_BishopPair_Index: number
+    EG_BishopPair_Index: number
+    MG_KnightMobility_Index: number
+    MG_BishopMobility_Index: number
+    MG_RookMobility_Index: number
+    MG_QueenMobility_Index: number
+    EG_KnightMobility_Index: number
+    EG_BishopMobility_Index: number
+    EG_RookMobility_Index: number
+    EG_QueenMobility_Index: number
 }
 
 export const engine = new Engine();
@@ -65,7 +78,20 @@ export function LoadWeights() {
         EG_PassedPawn_Index: 0,
         MG_RookQueen_Index: 0,
         MG_KnightOutpost_Index: 0,
-        EG_KnightOutpost_Index: 0
+        EG_KnightOutpost_Index: 0,
+        MG_BishopOutpost_Index: 0,
+        EG_BishopOutpost_Index: 0,
+        KingSemiOpen_Index: 0,
+        MG_BishopPair_Index: 0,
+        EG_BishopPair_Index: 0,
+        MG_KnightMobility_Index: 0,
+        MG_BishopMobility_Index: 0,
+        MG_RookMobility_Index: 0,
+        MG_QueenMobility_Index: 0,
+        EG_KnightMobility_Index: 0,
+        EG_BishopMobility_Index: 0,
+        EG_RookMobility_Index: 0,
+        EG_QueenMobility_Index: 0,
     };
 
     let index = 0;
@@ -129,6 +155,48 @@ export function LoadWeights() {
     weights.splice(indexes.MG_KnightOutpost_Index, 0, engine.MGKnightOutpostBonus);
     weights.splice(indexes.EG_KnightOutpost_Index, 0, engine.EGKnightOutpostBonus);
 
+    index += 2;
+
+    indexes.MG_BishopOutpost_Index = index;
+    indexes.EG_BishopOutpost_Index = index + 1;
+
+    weights.splice(indexes.MG_BishopOutpost_Index, 0, engine.MGBishopOutpostBonus);
+    weights.splice(indexes.EG_BishopOutpost_Index, 0, engine.EGBishopOutpostBonus);
+
+    index += 2;
+
+    indexes.KingSemiOpen_Index = index;
+
+    weights.splice(indexes.KingSemiOpen_Index, 0, engine.MGKingSemiOpenPenalty);
+
+    index += 1;
+
+    indexes.MG_BishopPair_Index = index;
+    indexes.EG_BishopPair_Index = index + 1;
+
+    weights.splice(indexes.MG_BishopPair_Index, 0, engine.MGBishopPairBonus);
+    weights.splice(indexes.EG_BishopPair_Index, 0, engine.EGBishopPairBonus);
+
+    index += 2;
+
+    indexes.MG_KnightMobility_Index = index;
+    indexes.MG_BishopMobility_Index = index + 9;
+    indexes.MG_RookMobility_Index = indexes.MG_BishopMobility_Index + 14;
+    indexes.MG_QueenMobility_Index = indexes.MG_RookMobility_Index + 15;
+    indexes.EG_KnightMobility_Index = indexes.MG_QueenMobility_Index + 28;
+    indexes.EG_BishopMobility_Index = indexes.EG_KnightMobility_Index + 9;
+    indexes.EG_RookMobility_Index = indexes.EG_BishopMobility_Index + 14;
+    indexes.EG_QueenMobility_Index = indexes.EG_RookMobility_Index + 15;
+
+    weights.splice(indexes.MG_KnightMobility_Index, 0, ...engine.MGKnightMobility);
+    weights.splice(indexes.MG_BishopMobility_Index, 0, ...engine.MGBishopMobility);
+    weights.splice(indexes.MG_RookMobility_Index, 0, ...engine.MGRookMobility);
+    weights.splice(indexes.MG_QueenMobility_Index, 0, ...engine.MGQueenMobility);
+    weights.splice(indexes.EG_KnightMobility_Index, 0, ...engine.EGKnightMobility);
+    weights.splice(indexes.EG_BishopMobility_Index, 0, ...engine.EGBishopMobility);
+    weights.splice(indexes.EG_RookMobility_Index, 0, ...engine.EGRookMobility);
+    weights.splice(indexes.EG_QueenMobility_Index, 0, ...engine.EGQueenMobility);
+
     return { weights, indexes };
 }
 
@@ -137,7 +205,7 @@ function LoadPositions(indexes: Indexes, numPositions: number, weightsLength: nu
     const reg = new RegExp("\"(.*?)\"");
 
     try {
-        const data = readFileSync(path.join(__dirname, "./quiet-labeled.epd"), "utf8");
+        const data = readFileSync(path.join(__dirname, "./quiet-extended-2.epd"), "utf8");
         const lines = data.split("\n");
 
         if (numPositions === 0) {
@@ -182,8 +250,19 @@ export function GetCoefficients(indexes: Indexes, weightsLength: number) {
     const phase = ((engine.Position.Phase * 256 + (engine.PhaseTotal / 2)) / engine.PhaseTotal) | 0;
     const mgPhase = (256 - phase) / 256;
 	const egPhase = phase / 256;
+    const bishopCount = [0, 0];
+    const kingSquares = [
+        engine.GetLS1B(engine.Position.PiecesBB[Color.White][Pieces.King]),
+        engine.GetLS1B(engine.Position.PiecesBB[Color.White][Pieces.King]),
+    ];
+    const kingZones = [
+        engine.KingAttacks[kingSquares[Color.White]] | engine.squareBB[kingSquares[Color.White]],
+        engine.KingAttacks[kingSquares[Color.Black]] | engine.squareBB[kingSquares[Color.Black]],
+    ];
+    const kingAttackers = [0, 0];
 
     let allOccupancies = engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1];
+    const outpostRanks = [engine.rankMasks[Square.a4] | engine.rankMasks[Square.a5] | engine.rankMasks[Square.a6], engine.rankMasks[Square.a3] | engine.rankMasks[Square.a4] | engine.rankMasks[Square.a5]];
 
     while (allOccupancies) {
         let square = engine.GetLS1B(allOccupancies);
@@ -230,22 +309,53 @@ export function GetCoefficients(indexes: Indexes, weightsLength: number) {
             }
             case Pieces.Knight: {
                 // Knight outposts
-                if (engine.PawnAttacks[piece.Color ^ 1][actualSquare] & engine.Position.PiecesBB[piece.Color][Pieces.Pawn]
-                    && (engine.PawnAttacks[piece.Color][actualSquare] & engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n) {
+                if ((outpostRanks[piece.Color] & engine.squareBB[actualSquare])
+                    && (engine.passedMasks[piece.Color][actualSquare] & ~engine.fileMasks[actualSquare] & engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n
+                    && engine.PawnAttacks[piece.Color ^ 1][actualSquare] & engine.Position.PiecesBB[piece.Color][Pieces.Pawn]) {
                         rawNormals[indexes.MG_KnightOutpost_Index] += sign * mgPhase
                         rawNormals[indexes.EG_KnightOutpost_Index] += sign * egPhase
                 }
+
+                const attacks = engine.KnightAttacks[actualSquare];
+                const mobility = engine.CountBits(attacks);
+
+                rawNormals[indexes.MG_KnightMobility_Index + mobility] += sign * mgPhase;
+                rawNormals[indexes.EG_KnightMobility_Index + mobility] += sign * egPhase;
+
+                break;
+            }
+            case Pieces.Bishop: {
+                bishopCount[piece.Color]++;
+
+                const attacks = engine.GenerateBishopAttacks(engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1], actualSquare);
+                const mobility = engine.CountBits(attacks);
+
+                rawNormals[indexes.MG_BishopMobility_Index + mobility] += sign * mgPhase;
+                rawNormals[indexes.EG_BishopMobility_Index + mobility] += sign * egPhase;
+
+                if ((outpostRanks[piece.Color] & engine.squareBB[actualSquare])
+                    && (engine.passedMasks[piece.Color][actualSquare] & ~engine.fileMasks[actualSquare] & engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n
+                    && engine.PawnAttacks[piece.Color ^ 1][actualSquare] & engine.Position.PiecesBB[piece.Color][Pieces.Pawn]) {
+                        rawNormals[indexes.MG_BishopOutpost_Index] += sign * mgPhase
+                        rawNormals[indexes.EG_BishopOutpost_Index] += sign * egPhase
+                }
+
                 break;
             }
             case Pieces.Rook: {
-                // open file bonus
-                if (((engine.Position.PiecesBB[piece.Color][Pieces.Pawn] | engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) & engine.fileMasks[square]) === 0n) {
-                    rawNormals[indexes.MG_FileOpen_Index] += sign * mgPhase;
-                }
+                const attacks = engine.GenerateRookAttacks(engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1], actualSquare);
+                const mobility = engine.CountBits(attacks);
 
-                // semi-open file bonus
-                if ((engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn] & engine.fileMasks[square]) && (engine.Position.PiecesBB[piece.Color][Pieces.Pawn] & engine.fileMasks[square]) === 0n) {
-                    rawNormals[indexes.MG_FileSemiOpen_Index] += sign * mgPhase;
+                rawNormals[indexes.MG_RookMobility_Index + mobility] += sign * mgPhase;
+                rawNormals[indexes.EG_RookMobility_Index + mobility] += sign * egPhase;
+
+                if ((engine.Position.PiecesBB[piece.Color][Pieces.Pawn] & engine.fileMasks[square]) === 0n) {
+                    if ((engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn] & engine.fileMasks[square]) === 0n) {
+                        rawNormals[indexes.MG_FileOpen_Index] += sign * mgPhase;
+                    }
+                    else {
+                        rawNormals[indexes.MG_FileSemiOpen_Index] += sign * mgPhase;
+                    }
                 }
 
                 // Bonus if rook is on the same file as opponent's queen
@@ -254,7 +364,38 @@ export function GetCoefficients(indexes: Indexes, weightsLength: number) {
                 }
                 break;
             }
+            case Pieces.Queen: {
+                const attacks = engine.GenerateBishopAttacks(engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1], actualSquare) | engine.GenerateRookAttacks(engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1], actualSquare);
+                const mobility = engine.CountBits(attacks);
+
+                rawNormals[indexes.MG_QueenMobility_Index + mobility] += sign * mgPhase;
+                rawNormals[indexes.EG_QueenMobility_Index + mobility] += sign * egPhase;
+
+                break;
+            }
+            case Pieces.King: {
+                const file = Math.min(Math.max(square & 7, 1), 6);
+                let j = 1;
+
+                for (let i = file - 1; i <= file + 1; i++) {
+                    if ((engine.fileMasks[i] & engine.Position.PiecesBB[piece.Color][Pieces.Pawn]) === 0n) {
+                        rawNormals[indexes.KingSemiOpen_Index] -= mgPhase * sign * j * j;
+                        j++;
+                    }
+                }
+
+                break;
+            }
         }
+    }
+
+    if (bishopCount[Color.White] >= 2) {
+        rawNormals[indexes.MG_BishopPair_Index] += mgPhase;
+        rawNormals[indexes.EG_BishopPair_Index] += egPhase;
+    }
+    if (bishopCount[Color.Black] >= 2) {
+        rawNormals[indexes.MG_BishopPair_Index] -= mgPhase;
+        rawNormals[indexes.EG_BishopPair_Index] -= egPhase;
     }
 
     // Material coeffs
@@ -360,6 +501,20 @@ function PrintResults(weights: number[], indexes: Indexes) {
     console.log(`MG Rook-Queen File Score: ${weights.slice(indexes.MG_RookQueen_Index, indexes.MG_RookQueen_Index + 1).map(x => Math.round(x))}`);
     console.log(`MG Knight Outpost Score: ${weights.slice(indexes.MG_KnightOutpost_Index, indexes.MG_KnightOutpost_Index + 1).map(x => Math.round(x))}`);
     console.log(`EG Knight Outpost Score: ${weights.slice(indexes.EG_KnightOutpost_Index, indexes.EG_KnightOutpost_Index + 1).map(x => Math.round(x))}`);
+    console.log(`MG Bishop Outpost Score: ${weights.slice(indexes.MG_BishopOutpost_Index, indexes.MG_BishopOutpost_Index + 1).map(x => Math.round(x))}`);
+    console.log(`EG Bishop Outpost Score: ${weights.slice(indexes.EG_BishopOutpost_Index, indexes.EG_BishopOutpost_Index + 1).map(x => Math.round(x))}`);
+    console.log(`King Semi Open: ${weights.slice(indexes.KingSemiOpen_Index, indexes.KingSemiOpen_Index + 1).map(x => Math.round(x))}`);
+    console.log(`MG Bishop Pair Score: ${weights.slice(indexes.MG_BishopPair_Index, indexes.MG_BishopPair_Index + 1).map(x => Math.round(x))}`);
+    console.log(`EG Bishop Pair Score: ${weights.slice(indexes.EG_BishopPair_Index, indexes.EG_BishopPair_Index + 1).map(x => Math.round(x))}`);
+
+    console.log(`MG Knight Mobility: ${weights.slice(indexes.MG_KnightMobility_Index, indexes.MG_KnightMobility_Index + 9).map(x => Math.round(x))}`);
+    console.log(`MG Bishop Mobility: ${weights.slice(indexes.MG_BishopMobility_Index, indexes.MG_BishopMobility_Index + 14).map(x => Math.round(x))}`);
+    console.log(`MG Rook Mobility: ${weights.slice(indexes.MG_RookMobility_Index, indexes.MG_RookMobility_Index + 15).map(x => Math.round(x))}`);
+    console.log(`MG Queen Mobility: ${weights.slice(indexes.MG_QueenMobility_Index, indexes.MG_QueenMobility_Index + 28).map(x => Math.round(x))}`);
+    console.log(`EG Knight Mobility: ${weights.slice(indexes.EG_KnightMobility_Index, indexes.EG_KnightMobility_Index + 9).map(x => Math.round(x))}`);
+    console.log(`EG Bishop Mobility: ${weights.slice(indexes.EG_BishopMobility_Index, indexes.EG_BishopMobility_Index + 14).map(x => Math.round(x))}`);
+    console.log(`EG Rook Mobility: ${weights.slice(indexes.EG_RookMobility_Index, indexes.EG_RookMobility_Index + 15).map(x => Math.round(x))}`);
+    console.log(`EG Queen Mobility: ${weights.slice(indexes.EG_QueenMobility_Index, indexes.EG_QueenMobility_Index + 28).map(x => Math.round(x))}`);
 }
 
 function Tune(epochs: number, numPositions: number) {
@@ -406,4 +561,4 @@ function Tune(epochs: number, numPositions: number) {
     console.timeEnd("tuner");
 }
 
-Tune(2000, 0);
+Tune(10000, 0);
