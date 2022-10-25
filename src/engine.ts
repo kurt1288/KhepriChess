@@ -1,3 +1,5 @@
+declare var __VERSION__: string;
+
 export enum Square {
     a8, b8, c8, d8, e8, f8, g8, h8,
     a7, b7, c7, d7, e7, f7, g7, h7,
@@ -130,7 +132,7 @@ class Khepri {
     }
 
     readonly name = "KhepriChess";
-    readonly version = "2.1.0";
+    readonly version = __VERSION__; // replaced by webpack
     readonly author = "Kurt Peters";
 
     // Flag to indicate if the game is Chess960/Fischer Random

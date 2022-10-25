@@ -1,4 +1,14 @@
+const webpack = require('webpack');
 const path = require('path');
+const package = require('./package.json');
+
+const version = package.version;
+
+const plugins = [
+   new webpack.DefinePlugin({
+      __VERSION__: JSON.stringify(version),
+   }),
+];
 
 const devConfig = {
    name: 'devConfig',
@@ -20,6 +30,7 @@ const devConfig = {
          }
       ]
    },
+   plugins,
    resolve: {
       extensions: [ '.tsx', '.ts', '.js' ],
    },
@@ -42,11 +53,12 @@ const browserConfig = {
          }
       ]
    },
+   plugins,
    resolve: {
       extensions: [ '.tsx', '.ts', '.js' ]
    },
    output: {
-      filename: 'kheprichess_browser.js',
+      filename: `kheprichess_browser-${version}.js`,
       path: path.resolve(__dirname, 'dist'),
       library: 'Engine',
       libraryTarget: 'var',
@@ -68,11 +80,12 @@ const uciConfig = {
          }
       ]
    },
+   plugins,
    resolve: {
       extensions: [ '.tsx', '.ts', '.js' ]
    },
    output: {
-      filename: 'kheprichess_uci.js',
+      filename: `kheprichess_uci-${version}.js`,
       path: path.resolve(__dirname, 'dist')
    },
 }
