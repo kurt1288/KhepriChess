@@ -1,4 +1,4 @@
-declare var __VERSION__: string;
+declare const __VERSION__: string;
 
 export enum Square {
     a8, b8, c8, d8, e8, f8, g8, h8,
@@ -11,17 +11,16 @@ export enum Square {
     a1, b1, c1, d1, e1, f1, g1, h1, no_sq,
 }
 
-export enum Pieces {
+export const enum Pieces {
     Pawn, Knight, Bishop, Rook, Queen, King,
 }
 
-export enum Color {
+export const enum Color {
     White,
     Black,
-    Both,
 }
 
-export enum CastlingRights {
+export const enum CastlingRights {
     WhiteKingside = 1,
     WhiteQueenside,
     BlackKingside = 4,
@@ -29,21 +28,21 @@ export enum CastlingRights {
 }
 
 // Moves types as defined at https://www.chessprogramming.org/Encoding_Moves
-enum MoveType {
+const enum MoveType {
     Normal,
     Promotion,
     EnPassant,
     Castle,
 }
 
-enum PromotionType {
+const enum PromotionType {
     Knight,
     Bishop,
     Rook,
     Queen,
 }
 
-enum HashFlag {
+const enum HashFlag {
     Exact,
     Alpha,
     Beta,
@@ -56,7 +55,7 @@ export interface IPosition {
     OccupanciesBB: [bigint, bigint]
     Squares: Piece[]
     CastlingRights: number
-    SideToMove: Color.Black | Color.White
+    SideToMove: Color
     EnPassSq: Square
     HalfMoves: number
     Ply: number
@@ -70,7 +69,7 @@ export interface IPosition {
 
 interface Piece {
     Type: Pieces
-    Color: Color.Black | Color.White
+    Color: Color
 }
 
 interface State {
@@ -92,7 +91,7 @@ interface Zobrist {
 
 interface TTEntry {
     Hash: bigint
-    BestMove: number
+    BestMove: Move
     Depth: number
     Score: number
     Flag: HashFlag
@@ -849,7 +848,7 @@ class Khepri {
      * @param move a move number
      * @returns False if the move would leave side's own king in check, otherwise true
      */
-    MakeMove(move: number) {
+    MakeMove(move: Move) {
         const from = move & 0x3f;
         const to = (move & 0xfc0) >> 6;
         const moveType = (move & 0x3f80) >> 12;
@@ -946,12 +945,8 @@ class Khepri {
         return !this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove ^ 1][Pieces.King]), this.Position.SideToMove);
     }
 
-    UnmakeMove(move: number) {
-        const state = this.stateCopy.pop();
-
-        if (!state) {
-            throw new Error("Unable to get state for unmake move");
-        }
+    UnmakeMove(move: Move) {
+        const state = this.stateCopy.pop() as State;
 
         this.Position.Ply--;
 
@@ -1065,11 +1060,7 @@ class Khepri {
     }
 
     UnmakeNullMove() {
-        const state = this.stateCopy.pop();
-
-        if (!state) {
-            throw new Error("Unable to get state for unmake move");
-        }
+        const state = this.stateCopy.pop() as State;
 
         this.Position.CastlingRights = state.CastlingRights;
         this.Position.EnPassSq = state.EnPassSq;
@@ -1089,19 +1080,19 @@ class Khepri {
         this.Position.Squares[to] = piece;
     }
 
-    RemovePiece(piece: Pieces, color: Color.Black | Color.White, square: Square) {
+    RemovePiece(piece: Pieces, color: Color, square: Square) {
         this.Position.PiecesBB[color][piece] = this.RemoveBit(this.Position.PiecesBB[color][piece], square);
         this.Position.OccupanciesBB[color] = this.RemoveBit(this.Position.OccupanciesBB[color], square);
         delete this.Position.Squares[square];
     }
 
-    PlacePiece(piece: Pieces, color: Color.Black | Color.White, square: Square) {
+    PlacePiece(piece: Pieces, color: Color, square: Square) {
         this.Position.PiecesBB[color][piece] = this.SetBit(this.Position.PiecesBB[color][piece], square);
         this.Position.OccupanciesBB[color] = this.SetBit(this.Position.OccupanciesBB[color], square);
         this.Position.Squares[square] = { Type: piece, Color: color };
     }
 
-    PrettyPrintMove(move: number) {
+    PrettyPrintMove(move: Move) {
         const from = move & 0x3f;
         let to = (move & 0xfc0) >> 6;
         const type = (move & 0x3f80) >> 12;
@@ -1135,10 +1126,10 @@ class Khepri {
      * 
      **************************/
 
-    rankMasks: bigint[] = [];
-    fileMasks: bigint[] = [];
-    isolatedMasks: bigint[] = [];
-    passedMasks = Array(2).fill(0).map(() => Array(64).fill(0));
+    readonly rankMasks: bigint[] = [];
+    readonly fileMasks: bigint[] = [];
+    readonly isolatedMasks: bigint[] = [];
+    readonly passedMasks: bigint[][] = Array(2).fill(0).map(() => Array(64).fill(0));
     private readonly betweenMasks: bigint[][] = Array(64).fill(0n).map(() => Array(64).fill(0n));
     readonly attackRays: bigint[][] = Array.from(Array(3), () => new Array(64).fill(0n));
     readonly squareBB: bigint[] = [];
@@ -1592,7 +1583,7 @@ class Khepri {
      * @param move 
      * @param ply 
      */
-    WriteTT(depth: number, flag: HashFlag, score: number, move: number) {
+    WriteTT(depth: number, flag: HashFlag, score: number, move: Move) {
         const index = Number(this.Position.Hash % this.TranspositionTables.Size);
 
         if (score > this.Checkmate) {
@@ -1603,15 +1594,13 @@ class Khepri {
             score -= this.Position.Ply;
         }
 
-        const entry: TTEntry = {
+        this.TranspositionTables.Entries[index] = {
             BestMove: move,
             Depth: depth,
             Flag: flag,
             Hash: this.Position.Hash,
             Score: score,
-        }
-
-        this.TranspositionTables.Entries[index] = entry;
+        };
     }
 
     /**
@@ -1724,152 +1713,152 @@ class Khepri {
     readonly MGPieceValue = [80, 321, 328, 447, 912, 15000];
     readonly EGPieceValue = [102, 256, 271, 472, 911, 15000];
 
-    PST = [
+    readonly PST = [
         // opening/middle game values
         [
             // pawn
             [
-                0, 0, 0, 0, 0, 0, 0, 0,
-                24, 24, 16, 16, 9, 10, 7, 6,
-                0, 11, 12, 8, 13, 21, 10, -6,
-                -23, 4, -5, 12, 16, 3, 5, -26,
-                -28, -13, -6, 3, 6, 0, 0, -30,
-                -24, -13, -9, -10, 0, -2, 21, -15,
-                -28, -8, -25, -17, -12, 11, 28, -21,
-                0, 0, 0, 0, 0, 0, 0, 0,
+                  0,   0,   0,   0,   0,  0,  0,   0,
+                 24,  24,  16,  16,   9, 10,  7,   6,
+                  0,  11,  12,   8,  13, 21, 10,  -6,
+                -23,   4,  -5,  12,  16,  3,  5, -26,
+                -28, -13,  -6,   3,   6,  0,  0, -30,
+                -24, -13,  -9, -10,   0, -2, 21, -15,
+                -28,  -8, -25, -17, -12, 11, 28, -21,
+                  0,   0,   0,   0,   0,  0,  0,   0,
             ],
             
             // knight
             [
-                -11, -2, -1, -1, 1, -4, -1, -5,
-                -9, -4, 5, 4, 2, 4, 0, -2,
-                -6, 9, 3, 11, 14, 13, 12, 5,
-                2, 0, -1, 18, 6, 20, 9, 18,
-                0, -1, -3, -10, 3, -3, 8, 8,
-                -10, -14, -10, -5, 6, -2, 4, -6,
-                -5, -5, -19, -1, -3, 0, -1, 4,
-                -5, -2, -6, -5, 0, 3, -2, -3,
+                -11,  -2,  -1,  -1,  1, -4, -1, -5,
+                 -9,  -4,   5,   4,  2,  4,  0, -2,
+                 -6,   9,   3,  11, 14, 13, 12,  5,
+                  2,   0,  -1,  18,  6, 20,  9, 18,
+                  0,  -1,  -3, -10,  3, -3,  8,  8,
+                -10, -14, -10,  -5,  6, -2,  4, -6,
+                 -5,  -5, -19,  -1, -3,  0, -1,  4,
+                 -5,  -2,  -6,  -5,  0,  3, -2, -3,
             ],
 
             // bishop
             [
-                -4, 0, -4, -2, -1, -1, -1, -1,
-                -8, -3, -6, -4, 2, 1, -2, -13,
-                -10, 0, 3, 5, 4, 11, 5, 4,
-                -8, -5, 2, 16, 7, 10, -1, -3,
-                0, 3, -4, 7, 13, -9, -5, 8,
-                -1, 11, 4, -2, -1, 5, 7, 1,
-                6, 7, 8, -4, 0, 9, 22, -1,
-                -11, 1, -1, -4, 2, -5, -3, -6,
+                 -4,  0, -4, -2, -1, -1, -1,  -1,
+                 -8, -3, -6, -4,  2,  1, -2, -13,
+                -10,  0,  3,  5,  4, 11,  5,   4,
+                 -8, -5,  2, 16,  7, 10, -1,  -3,
+                  0,  3, -4,  7, 13, -9, -5,   8,
+                 -1, 11,  4, -2, -1,  5,  7,   1,
+                  6,  7,  8, -4,  0,  9, 22,  -1,
+                -11,  1, -1, -4,  2, -5, -3,  -6,
             ],
 
             // rook
             [
-                4, 4, 3, 6, 6, 2, 3, 4,
-                3, 3, 10, 9, 9, 8, 4, 5,
-                -4, 6, 2, 8, 1, 7, 6, 2,
-                -8, -6, 1, -1, 3, 8, -1, 1,
-                -17, -9, -9, -6, -5, -7, 1, -12,
-                -22, -14, -12, -9, -6, -4, -2, -12,
-                -23, -11, -12, -5, -2, 1, -1, -30,
-                -3, -7, -4, 4, 9, 12, -20, -3,
+                  4,   4,   3,  6,  6,  2,   3,   4,
+                  3,   3,  10,  9,  9,  8,   4,   5,
+                 -4,   6,   2,  8,  1,  7,   6,   2,
+                 -8,  -6,   1, -1,  3,  8,  -1,   1,
+                -17,  -9,  -9, -6, -5, -7,   1, -12,
+                -22, -14, -12, -9, -6, -4,  -2, -12,
+                -23, -11, -12, -5, -2,  1,  -1, -30,
+                 -3,  -7,  -4,  4,  9, 12, -20,  -3,
             ],
 
             // queen
             [
-                -5, 2, 4, 2, 6, 3, 3, 5,
-                -13, -23, 2, 6, 4, 10, 5, 12,
-                -7, -6, -2, 3, 12, 16, 17, 22,
-                -10, -11, -5, -5, 7, 6, 9, 14,
-                -5, -13, -9, -8, -1, 3, 8, 5,
-                -9, -5, -2, -5, -5, 5, 2, 4,
-                -14, -8, 3, 7, 8, 6, -7, 2,
-                -6, -10, -4, 13, -3, -13, -5, -6,
+                 -5,   2,  4,  2,  6,   3,  3,  5,
+                -13, -23,  2,  6,  4,  10,  5, 12,
+                 -7,  -6, -2,  3, 12,  16, 17, 22,
+                -10, -11, -5, -5,  7,   6,  9, 14,
+                 -5, -13, -9, -8, -1,   3,  8,  5,
+                 -9,  -5, -2, -5, -5,   5,  2,  4,
+                -14,  -8,  3,  7,  8,   6, -7,  2,
+                 -6, -10, -4, 13, -3, -13, -5, -6,
             ],
 
             // king
             [
-                -1, 0, 0, 0, 0, 0, 1, 0,
-                0, 2, 1, 2, 2, 2, 1, 0,
-                1, 3, 3, 3, 2, 6, 5, 1,
-                0, 2, 4, 3, 3, 4, 3, -3,
-                -3, 1, 3, 1, 1, 0, -3, -9,
-                -2, 0, 1, -3, -2, -6, -2, -11,
-                -2, -1, -3, -25, -25, -13, 13, 14,
-                -14, 14, 10, -29, 7, -27, 30, 9,
+                 -1,  0,  0,   0,   0,   0,  1,   0,
+                  0,  2,  1,   2,   2,   2,  1,   0,
+                  1,  3,  3,   3,   2,   6,  5,   1,
+                  0,  2,  4,   3,   3,   4,  3,  -3,
+                 -3,  1,  3,   1,   1,   0, -3,  -9,
+                 -2,  0,  1,  -3,  -2,  -6, -2, -11,
+                 -2, -1, -3, -25, -25, -13, 13,  14,
+                -14, 14, 10, -29,   7, -27, 30,   9,
             ]
         ],
         // end game values
         [
             // pawn
             [
-                0, 0, 0, 0, 0, 0, 0, 0,
-                50, 47, 35, 28, 25, 25, 31, 39,
-                35, 32, 22, 5, 2, 9, 22, 21,
-                8, 0, -11, -27, -27, -21, -8, -10,
-                -4, -4, -19, -26, -26, -24, -17, -19,
+                  0,  0,   0,   0,   0,   0,   0,   0,
+                 50, 47,  35,  28,  25,  25,  31,  39,
+                 35, 32,  22,   5,   2,   9,  22,  21,
+                  8,  0, -11, -27, -27, -21,  -8, -10,
+                 -4, -4, -19, -26, -26, -24, -17, -19,
                 -14, -9, -19, -17, -18, -19, -24, -26,
-                -7, -9, -5, -11, -8, -18, -22, -26,
-                0, 0, 0, 0, 0, 0, 0, 0,
+                 -7, -9,  -5, -11,  -8, -18, -22, -26,
+                  0,  0,   0,   0,   0,   0,   0,   0,
             ],
 
             // knight
             [
-                -10, -3, 0, -3, 1, -6, -4, -7,
-                -5, 3, -3, 6, 1, -4, -2, -5,
-                -5, -2, 2, 1, 1, 1, 1, -3,
-                1, 7, 7, 5, 7, 5, 8, 5,
-                -1, 0, 2, 9, 3, 3, 6, -1,
-                -3, -3, -11, 2, -4, -17, -4, -2,
-                -3, -2, -7, -5, 1, -7, 0, -2,
-                -5, -13, -4, 0, -2, -4, -9, -4,
+                -10,  -3,   0, -3,  1,  -6, -4, -7,
+                 -5,   3,  -3,  6,  1,  -4, -2, -5,
+                 -5,  -2,   2,  1,  1,   1,  1, -3,
+                  1,   7,   7,  5,  7,   5,  8,  5,
+                 -1,   0,   2,  9,  3,   3,  6, -1,
+                 -3,  -3, -11,  2, -4, -17, -4, -2,
+                 -3,  -2,  -7, -5,  1,  -7,  0, -2,
+                 -5, -13,  -4,  0, -2,  -4, -9, -4,
             ],
 
             // bishop
             [
-                -4, -2, -4, -2, -1, -2, -2, -3,
-                -3, -1, 0, -7, 0, -3, -4, -7,
-                1, -1, 0, 0, 0, 3, 1, 2,
-                -2, 4, 4, 11, 5, 4, -1, 1,
-                -1, -2, 7, 9, 2, 3, -3, -1,
-                1, 0, 2, 5, 6, -3, -1, 1,
-                -3, -11, -7, -1, 1, -5, -7, -4,
-                -9, -1, -6, -2, -2, -4, -4, -5,
+                -4,  -2, -4, -2, -1, -2, -2, -3,
+                -3,  -1,  0, -7,  0, -3, -4, -7,
+                 1,  -1,  0,  0,  0,  3,  1,  2,
+                -2,   4,  4, 11,  5,  4, -1,  1,
+                -1,  -2,  7,  9,  2,  3, -3, -1,
+                 1,   0,  2,  5,  6, -3, -1,  1,
+                -3, -11, -7, -1,  1, -5, -7, -4,
+                -9,  -1, -6, -2, -2, -4, -4, -5,
             ],
 
             // rook
             [
-                11, 9, 11, 13, 11, 7, 9, 7,
-                12, 13, 14, 13, 9, 7, 8, 8,
-                5, 7, 5, 5, 0, 1, 2, -2,
-                -2, 0, 5, -2, -1, 2, -2, 0,
-                -1, -2, 1, -4, -6, -8, -6, -8,
-                -8, -5, -9, -7, -11, -13, -6, -10,
-                -7, -7, -5, -6, -9, -9, -7, -8,
-                -10, -3, 0, -7, -12, -13, -3, -21,
+                 11,  9, 11, 13,  11,   7,  9,   7,
+                 12, 13, 14, 13,   9,   7,  8,   8,
+                  5,  7,  5,  5,   0,   1,  2,  -2,
+                 -2,  0,  5, -2,  -1,   2, -2,   0,
+                 -1, -2,  1, -4,  -6,  -8, -6,  -8,
+                 -8, -5, -9, -7, -11, -13, -6, -10,
+                 -7, -7, -5, -6,  -9,  -9, -7,  -8,
+                -10, -3,  0, -7, -12, -13, -3, -21,
             ],
 
             // queen
             [
-                -5, 2, 4, 3, 6, 4, 2, 4,
-                -8, -5, 4, 7, 7, 7, 3, 4,
-                -5, -3, 0, 7, 11, 11, 7, 9,
-                -6, -1, 1, 8, 12, 6, 9, 8,
-                -7, -2, 3, 13, 8, 6, 6, 4,
-                -5, -8, 1, -3, 0, 1, 3, 2,
+                -5,  2,   4,   3,  6,  4,  2,  4,
+                -8, -5,   4,   7,  7,  7,  3,  4,
+                -5, -3,   0,   7, 11, 11,  7,  9,
+                -6, -1,   1,   8, 12,  6,  9,  8,
+                -7, -2,   3,  13,  8,  6,  6,  4,
+                -5, -8,   1,  -3,  0,  1,  3,  2,
                 -7, -7, -14, -11, -9, -5, -6, -1,
-                -6, -8, -7, -17, -5, -9, -4, -5,
+                -6, -8,  -7, -17, -5, -9, -4, -5,
             ],
 
             // king
             [
-                -3, -2, -2, -1, 0, 1, 2, -2,
-                -2, 6, 6, 6, 6, 12, 7, 0,
-                1, 12, 14, 12, 11, 23, 21, 3,
-                -4, 9, 18, 23, 17, 21, 14, -5,
-                -11, -4, 14, 20, 19, 15, 2, -18,
-                -13, -5, 7, 14, 15, 9, 0, -16,
-                -16, -9, 2, 6, 10, 3, -11, -25,
+                 -3,  -2,  -2,  -1,   0,   1,   2,  -2,
+                 -2,   6,   6,   6,   6,  12,   7,   0,
+                  1,  12,  14,  12,  11,  23,  21,   3,
+                 -4,   9,  18,  23,  17,  21,  14,  -5,
+                -11,  -4,  14,  20,  19,  15,   2, -18,
+                -13,  -5,   7,  14,  15,   9,   0, -16,
+                -16,  -9,   2,   6,  10,   3, -11, -25,
                 -22, -25, -16, -15, -25, -12, -35, -44,
             ]
         ]
