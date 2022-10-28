@@ -9,7 +9,7 @@ KhepriChess is a JavaScript (written in TypeScript) chess engine. It uses native
 
 ## Usage
 
-KhepriChess can be used in both a browser or with a GUI the can run UCI engines. Please make sure you use the appropriately named file for the necessary application.
+KhepriChess can be used in both a browser or with a GUI the can run UCI engines. **Please make sure you use the appropriately named file.**
 
 ### Browsers
 
@@ -27,6 +27,8 @@ For a more in-depth example of using it in the browser, please see the [the exam
 
 ### UCI
 
+Use "kheprichess_uci.js" in UCI-compatible applications.
+
 Nodejs is required. Please download the latest version (or the LTS version) [here](https://nodejs.org/en/).
 
 Once node is installed, you can add KhepriChess to a GUI program, like Arena or Cute Chess.
@@ -34,6 +36,13 @@ Once node is installed, you can add KhepriChess to a GUI program, like Arena or 
 * In [Arena](http://www.playwitharena.de/), the command line should be the path to the nodejs executable. In the "Command Line Parameters" field, specify the path to the kheprichess_uci.js file.
 
 * In [Cute Chess](https://cutechess.com/), the command field should look something like `<Nodejs directory>\node.exe "<Khepri directory>\kheprichess_uci.js"`.
+
+## Chess960
+
+KhepriChess supports the Chess960 (Fischer Random Chess) variant. To enable:
+
+* Browser: set the `isChess960` property to true
+* UCI: Use the UCI option
 
 ## Polyglot
 
