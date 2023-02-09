@@ -2167,7 +2167,7 @@ class Khepri {
         this.Position.Ply = 0;
 
         // The main iterative deepening search loop
-        for (let depth = 1; depth <= targetDepth; depth++) {            
+        for (let depth = 1; depth <= targetDepth; depth++) {
             pv.moves.length = 0;
 
             let margin = depth >= 4 ? 25 : this.Inf;
@@ -2195,10 +2195,6 @@ class Khepri {
             bestmove = this.PrettyPrintMove(pv.moves[0]);
 
             console.log(`info depth ${depth} score ${getScore()} nodes ${this.search.nodes} time ${end - start} pv ${pv.moves.map(x => this.PrettyPrintMove(x)).join(" ")}`);
-
-            if (score > this.Checkmate || score < -this.Checkmate) {
-                break;
-            }
         }
 
         console.log(`bestmove ${bestmove}`);
@@ -2343,7 +2339,13 @@ class Khepri {
                         pvMoves.moves.push(...childPVMoves.moves);
                     }
 
-                    if (score >= beta) {
+                    if (score < beta) {
+                        alpha = score;
+                        flag = HashFlag.Exact;
+                    }
+                    else {
+                        flag = HashFlag.Beta;
+
                         if (!this.MoveIsCapture(move)) {
                             // Store the move if it's a killer
                             this.search.killers[1][this.Position.Ply] = this.search.killers[0][this.Position.Ply];
@@ -2353,12 +2355,8 @@ class Khepri {
                             this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] += depth * depth;
                         }
 
-                        this.WriteTT(depth, HashFlag.Beta, bestScore, bestMove);
-                        return score;
+                        break;
                     }
-
-                    alpha = score;
-                    flag = HashFlag.Exact;
                 }
             }
             else {
@@ -2404,7 +2402,7 @@ class Khepri {
 
         // Check the transposition table for matching position and score
         const { ttScore, ttMove } = this.ProbeTT(0, alpha, beta);
-        if (ttScore !== this.HashNoMove && this.Position.Ply !== 0) {
+        if (ttScore !== this.HashNoMove) {
             return ttScore;
         }
 
