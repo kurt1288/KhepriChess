@@ -2280,9 +2280,15 @@ class Khepri {
             const move = moves[i];
 
             const capture = this.MoveIsCapture(move);
+            const promotion = this.MoveIsPromotion(move);
+
+            // Late move pruning
+            if (!capture && !promotion && depth <= 2 && legalMoves > 5 * depth) {
+                continue;
+            }
 
             // Futility pruning
-            if (canFutilityPrune && legalMoves > 1 && !capture && !this.MoveIsPromotion(move)) {
+            if (canFutilityPrune && legalMoves > 1 && !capture && !promotion) {
                 continue;
             }
 
@@ -2530,8 +2536,14 @@ class Khepri {
                     capturedPiece = this.Position.Squares[this.Position.SideToMove === Color.White ? ((move & 0xfc0) >> 6) + 8 : ((move & 0xfc0) >> 6) - 8];
                 }
 
-                const score = this.MGPieceValue[capturedPiece.Type] - movingPiece.Type + 10000;
-                scores.push({ move, score });
+                if (movingPiece.Type > capturedPiece.Type) {
+                    const score = this.MGPieceValue[capturedPiece.Type] - movingPiece.Type + 7000;
+                    scores.push({ move, score });
+                }
+                else {
+                    const score = this.MGPieceValue[capturedPiece.Type] - movingPiece.Type + 10000;
+                    scores.push({ move, score });
+                }
             }
             else {
                 if (move === this.search.killers[0][this.Position.Ply]) {
