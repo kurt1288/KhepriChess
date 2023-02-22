@@ -883,7 +883,6 @@ class Khepri {
     
                 if (moveType === MoveType.EnPassant) {
                     captureSquare = piece.Color === Color.White ? to + 8 : to - 8;
-                    captured = { Type: Pieces.Pawn, Color: piece.Color ^ 1 } as Piece;
                 }
     
                 this.RemovePiece(captured.Type, captured.Color, captureSquare);
