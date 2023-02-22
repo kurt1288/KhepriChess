@@ -932,11 +932,6 @@ class Khepri {
         this.Position.SideToMove ^= 1;
         this.Position.Hash ^= this.Zobrist.SideToMove;
 
-        // Update hash en passant square if en passant square is set
-        if (this.Position.EnPassSq !== Square.no_sq) {
-            this.Position.Hash ^= this.Zobrist.EnPassant[this.Position.EnPassSq];
-        }
-
         this.PositionHistory[this.PositionHistory.length] = this.Position.Hash;
 
         // Because the move generator generates pseudo-legal moves,
