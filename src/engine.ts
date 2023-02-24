@@ -2299,27 +2299,18 @@ class Khepri {
             legalMoves++;
 
             let score = 0;
-            let R = 0;
+            let R = Math.log(depth * legalMoves ** 2) * 0.45;
 
-            // Late move reductions (LMR)
-            if (depth >= 2 && legalMoves > 1) {
-                R = Math.log(depth * legalMoves ** 2) * 0.45;
+            if (legalMoves > 1) {
+                // Start with a reduced search
+                score = -this.Negamax(depth - R - 1, -alpha - 1, -alpha, childPVMoves);
 
-                // Reduce reduction for PV-nodes
-                if (isPVNode) {
-                    R -= 1 + depth / (depth * 3);
-                }
-
-                R = Math.round(Math.max(1, R));
-
-                score = -this.Negamax(depth - 1 - R, -alpha - 1, -alpha, childPVMoves);
-
-                // Do a full search if LMR search fails high
+                // If the search failed high, do another full-depth search
                 if (score > alpha) {
                     score = -this.Negamax(depth - 1, -beta, -alpha, childPVMoves);
                 }
             }
-            // Full search if not LMR
+            // On the first move do a full-depth search
             else {
                 score = -this.Negamax(depth - 1, -beta, -alpha, childPVMoves);
             }
