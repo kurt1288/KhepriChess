@@ -121,6 +121,7 @@ interface Search {
     nodes: number
     killers: number[][]
     history: number[][][]
+    bestMove: { move: Move, score: number }
 }
 
 class Khepri {
@@ -2182,6 +2183,7 @@ class Khepri {
         nodes: 0,
         killers: Array(2).fill(0).map(() => Array(this.MaxPly).fill(0)),
         history: Array(2).fill(0).map(() => Array(64).fill(0).map(() => Array(64).fill(0))), // 2 64x64 arrays
+        bestMove: { move: 0, score: -this.Inf },
     }
 
     /**
@@ -2388,6 +2390,11 @@ class Khepri {
                         pvMoves.moves.length = 0;
                         pvMoves.moves.push(move);
                         pvMoves.moves.push(...childPVMoves.moves);
+
+                        // Extend the search time a bit if the score has dropped from the previous best move
+                        this.Timer.extended = depth > 1 && score < this.search.bestMove.score - 30;
+
+                        this.search.bestMove = { move: bestMove, score: bestScore };
                     }
 
                     if (score < beta) {
@@ -2741,11 +2748,13 @@ class Khepri {
         stopTime: 0,
         movetime: -1,
         stop: false,
+        extended: false,
     }
 
     StartTimer() {
         let searchTime = 0;
         this.Timer.stop = false;
+        this.Timer.extended = false;
 
         // If infinite time, we don't need to set any time limit on searching
         if (this.Timer.timeleft === -1 && this.Timer.movetime === -1) {
@@ -2792,7 +2801,8 @@ class Khepri {
             return;
         }
 
-        if (Date.now() > this.Timer.stopTime) {
+        // Search for at least the calculated time limit, but can search longer if extended (up to 75% of the total time left)
+        if (Date.now() > this.Timer.stopTime && (!this.Timer.extended || Date.now() - this.Timer.startTime >= (this.Timer.timeleft * 0.75))) {
             this.Timer.stop = true;
         }
     }
