@@ -1,6 +1,6 @@
 {
   "name": "kheprichess",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "scripts": {
     "start": "webpack serve --config-name devConfig",
     "build": "webpack --config-name browserConfig --config-name uciConfig",
