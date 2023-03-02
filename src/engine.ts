@@ -2226,20 +2226,34 @@ class Khepri {
         for (let depth = 1; depth <= targetDepth; depth++) {
             pv.moves.length = 0;
 
-            let margin = depth >= 4 ? 25 : this.Inf;
+            let margin = 10;
 
-            // Aspiration window
-            while (!this.Timer.stop) {
+            if (depth >= 4) {
                 alpha = Math.max(score - margin, -this.Inf);
                 beta = Math.min(score + margin, this.Inf);
+            }
 
+            // Aspiration window
+            while (true) {
                 score = this.Negamax(depth, alpha, beta, pv);
 
-                // if the score is within the window, we don't need to widen and research
-                if (score > alpha && score < beta)
+                if (this.Timer.stop) {
                     break;
+                }
 
-                margin *= 3;
+                // Adjust the aspiration window depending on whether the search failed high or low, or break from the loop if it didn't.
+                if (score <= alpha) {
+                    alpha = Math.max(score - margin, -this.Inf);
+                    beta = (alpha + beta) / 2;
+                }
+                else if (score >= beta) {
+                    beta = Math.min(score + margin, this.Inf);
+                }
+                else {
+                    break;
+                }
+
+                margin += margin / 5 + 2;
             }
 
             const end = Date.now();
