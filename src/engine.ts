@@ -2291,11 +2291,6 @@ class Khepri {
             return 0;
         }
 
-        // Check extension - search one more ply if side to move is in check
-        if (inCheck) {
-            depth += 1;
-        }
-
         if (depth <= 0) {
             return this.Quiescence(alpha, beta, depth);
         }
@@ -2303,6 +2298,11 @@ class Khepri {
         // Check for 3-fold or 50 moves draw
         if (this.Position.Ply > 0 && (this.IsRepetition() || this.Position.HalfMoves >= 100)) {
             return 0;
+        }
+
+        // Check extension - search one more ply if side to move is in check
+        if (inCheck) {
+            depth += 1;
         }
 
         // Check the transposition table for matching position and score
