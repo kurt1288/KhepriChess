@@ -2264,7 +2264,7 @@ class Khepri {
 
             bestmove = this.PrettyPrintMove(pv.moves[0]);
 
-            console.log(`info depth ${depth} score ${getScore()} nodes ${this.search.nodes} time ${end - start} pv ${pv.moves.map(x => this.PrettyPrintMove(x)).join(" ")}`);
+            console.log(`info depth ${depth} score ${getScore()} nodes ${this.search.nodes} nps ${(this.search.nodes * 1000) / (end - start) | 0} time ${end - start} pv ${pv.moves.map(x => this.PrettyPrintMove(x)).join(" ")}`);
         }
 
         console.log(`bestmove ${bestmove}`);
