@@ -2271,23 +2271,27 @@ class Khepri {
         return bestmove;
     }
 
-    Negamax(depth: number, alpha: number, beta: number, pvMoves: PVLine, nullMoveAllowed = true) {
+    Negamax(depth: number, alpha: number, beta: number, pvMoves: PVLine, nullMoveAllowed = true): number {
         let bestScore = -this.Inf;
         let flag = HashFlag.Alpha;
         let legalMoves = 0;
         let canFutilityPrune = false;
         const isPVNode = beta - alpha > 1;
-        const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
         const childPVMoves: PVLine = { moves: [] };
-
-        this.search.nodes++;
 
         // Check whether search time is up every 1000 nodes
         if (this.search.nodes % 1000 === 0) {
             this.CheckTime();
+
+            if (this.Timer.stop) {
+                return 0;
+            }
         }
 
-        if (this.Timer.stop) {
+        this.search.nodes++;
+
+        // Check for 3-fold or 50 moves draw
+        if (this.Position.Ply > 0 && (this.IsRepetition() || this.Position.HalfMoves >= 100)) {
             return 0;
         }
 
@@ -2295,10 +2299,7 @@ class Khepri {
             return this.Quiescence(alpha, beta, depth);
         }
 
-        // Check for 3-fold or 50 moves draw
-        if (this.Position.Ply > 0 && (this.IsRepetition() || this.Position.HalfMoves >= 100)) {
-            return 0;
-        }
+        const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
 
         // Check extension - search one more ply if side to move is in check
         if (inCheck) {
@@ -2313,33 +2314,41 @@ class Khepri {
 
         let bestMove = ttMove;
 
-        if (!inCheck && !isPVNode) {
+        if (!inCheck) {
             const staticEval = this.Evaluate();
 
-            // Reverse futility pruning (static null move pruning)
-            if (staticEval - (90 * depth) >= beta) {
-                return staticEval - (90 * depth);
+            // Razoring
+            if (depth <= 2 && staticEval + 150 * depth < alpha) {
+                const score = this.Quiescence(alpha, beta, depth);
+                if (score < alpha) {
+                    return score;
+                }
             }
 
-            // Futility pruning
-            if (depth <= 2 && staticEval + (90 * depth) <= alpha) {
-                canFutilityPrune = true;
+            // Reverse futility pruning (static null move pruning)
+            if (!isPVNode && depth <= 6 && staticEval - (50 * depth) >= beta) {
+                return staticEval;
             }
 
             // Null move pruning
-            if (nullMoveAllowed && depth >= 2 && staticEval >= beta) {
+            if (!isPVNode && nullMoveAllowed && depth >= 2 && staticEval >= beta) {
                 this.MakeNullMove();
 
                 const R = 3 + Math.floor(depth / 5);
-                let score = -this.Negamax(depth - 1 - R, -beta, 1 - beta, childPVMoves, false);
+                let score = -this.Negamax(depth - 1 - R, -beta, -beta + 1, childPVMoves, false);
 
                 this.UnmakeNullMove();
 
                 childPVMoves.moves.length = 0;
 
                 if (score >= beta) {
-                    return beta;
+                    return score;
                 }
+            }
+
+            // Futility pruning
+            if (depth <= 4 && staticEval + (300 * depth) <= alpha) {
+                canFutilityPrune = true;
             }
         }
 
@@ -2358,6 +2367,7 @@ class Khepri {
             }
 
             // Futility pruning
+            // also (!inCheck && depth <= 4 && staticEval + (300 * depth) <= alpha) set above
             if (canFutilityPrune && legalMoves > 1 && !capture && !promotion) {
                 continue;
             }
@@ -2375,14 +2385,14 @@ class Khepri {
             legalMoves++;
 
             let score = 0;
-            let R = Math.log(depth * legalMoves ** 2) * 0.45;
+            let R = Math.log(depth * legalMoves ** 2) * 0.45 | 0;
 
             if (legalMoves > 1) {
                 // Start with a reduced search
                 score = -this.Negamax(depth - R - 1, -alpha - 1, -alpha, childPVMoves);
 
                 // If the search failed high, do another full-depth search
-                if (score > alpha) {
+                if (score > alpha && R > 0) {
                     score = -this.Negamax(depth - 1, -beta, -alpha, childPVMoves);
                 }
             }
@@ -2427,7 +2437,8 @@ class Khepri {
                             this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] += depth * depth;
                         }
 
-                        break;
+                        this.WriteTT(depth, flag, bestScore, bestMove);
+                        return beta;
                     }
                 }
             }
