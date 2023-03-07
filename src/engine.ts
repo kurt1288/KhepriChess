@@ -2432,7 +2432,7 @@ class Khepri {
                     else {
                         flag = HashFlag.Beta;
 
-                        if (!this.MoveIsCapture(move)) {
+                        if (!capture) {
                             // Store the move if it's a killer
                             this.search.killers[1][this.Position.Ply] = this.search.killers[0][this.Position.Ply];
                             this.search.killers[0][this.Position.Ply] = move;
@@ -2447,7 +2447,7 @@ class Khepri {
                 }
             }
             else {
-                if (!this.MoveIsCapture(move)) {
+                if (!capture) {
                     if (this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] > 0) {
                         this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] -= 1;
                     }
