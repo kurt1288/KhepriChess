@@ -2297,7 +2297,7 @@ class Khepri {
         }
 
         if (depth <= 0) {
-            return this.Quiescence(alpha, beta, depth);
+            return this.Quiescence(alpha, beta);
         }
 
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
@@ -2320,7 +2320,7 @@ class Khepri {
 
             // Razoring
             if (depth <= 2 && staticEval + 150 * depth < alpha) {
-                const score = this.Quiescence(alpha, beta, depth);
+                const score = this.Quiescence(alpha, beta);
                 if (score < alpha) {
                     return score;
                 }
@@ -2474,7 +2474,7 @@ class Khepri {
         return bestScore;
     }
 
-    Quiescence(alpha: number, beta: number, depth: number) {
+    Quiescence(alpha: number, beta: number) {
         // Check whether search time is up every 1000 nodes
         if (this.search.nodes % 1000 === 0) {
             this.CheckTime();
@@ -2545,7 +2545,7 @@ class Khepri {
                 continue;
             }
 
-            let score = -this.Quiescence(-beta, -alpha, depth - 1);
+            let score = -this.Quiescence(-beta, -alpha);
 
             this.UnmakeMove(move);
 
