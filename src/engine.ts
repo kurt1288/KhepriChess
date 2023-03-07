@@ -2309,7 +2309,7 @@ class Khepri {
 
         // Check the transposition table for matching position and score
         const { ttScore, ttMove } = this.ProbeTT(depth, alpha, beta);
-        if (ttScore !== this.HashNoMove && this.Position.Ply !== 0) {
+        if (ttScore !== this.HashNoMove && !isPVNode) {
             return ttScore;
         }
 
@@ -2327,7 +2327,7 @@ class Khepri {
             }
 
             // Reverse futility pruning (static null move pruning)
-            if (!isPVNode && depth <= 6 && staticEval - (50 * depth) >= beta) {
+            if (!isPVNode && depth <= 6 && staticEval - (50 * depth) >= beta && Math.abs(staticEval) < this.Checkmate) {
                 return staticEval;
             }
 
@@ -2343,6 +2343,9 @@ class Khepri {
                 childPVMoves.moves.length = 0;
 
                 if (score >= beta) {
+                    if (Math.abs(score) > this.Checkmate) {
+                        return beta;
+                    }
                     return score;
                 }
             }
@@ -2362,7 +2365,7 @@ class Khepri {
             const capture = this.MoveIsCapture(move);
             const promotion = this.MoveIsPromotion(move);
 
-            if (!capture && !promotion) {
+            if (!capture && !promotion && bestScore > -this.Checkmate) {
                 // Late move pruning
                 if (depth <= 2 && legalMoves > 5 * depth) {
                     continue;
