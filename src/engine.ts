@@ -2277,6 +2277,7 @@ class Khepri {
         let legalMoves = 0;
         let canFutilityPrune = false;
         const isPVNode = beta - alpha > 1;
+        const isRootNode = this.Position.Ply === 0;
         const childPVMoves: PVLine = { moves: [] };
 
         // Check whether search time is up every 1000 nodes
@@ -2291,7 +2292,7 @@ class Khepri {
         this.search.nodes++;
 
         // Check for 3-fold or 50 moves draw
-        if (this.Position.Ply > 0 && (this.IsRepetition() || this.Position.HalfMoves >= 100)) {
+        if (!isRootNode && (this.IsRepetition() || this.Position.HalfMoves >= 100)) {
             return 0;
         }
 
@@ -2314,7 +2315,7 @@ class Khepri {
 
         let bestMove = ttMove;
 
-        if (!inCheck) {
+        if (!isRootNode && !inCheck) {
             const staticEval = this.Evaluate();
 
             // Razoring
@@ -2361,16 +2362,18 @@ class Khepri {
             const capture = this.MoveIsCapture(move);
             const promotion = this.MoveIsPromotion(move);
 
-            // Late move pruning
-            if (!capture && !promotion && depth <= 2 && legalMoves > 5 * depth) {
-                continue;
-            }
+            if (!capture && !promotion) {
+                // Late move pruning
+                if (depth <= 2 && legalMoves > 5 * depth) {
+                    continue;
+                }
 
-            // Futility pruning
-            // also (!inCheck && depth <= 4 && staticEval + (300 * depth) <= alpha) set above
-            if (canFutilityPrune && legalMoves > 1 && !capture && !promotion) {
-                continue;
-            }
+                // Futility pruning
+                // also (!inCheck && depth <= 4 && staticEval + (300 * depth) <= alpha) set above
+                if (canFutilityPrune && legalMoves > 1) {
+                    continue;
+                }
+            }            
 
             // Skip bad captures
             if (!inCheck && capture && this.See(move) < -300 * depth) {
@@ -2409,17 +2412,15 @@ class Khepri {
                 if (score > alpha) {
                     bestMove = move;
 
-                    if (isPVNode) {
-                        // update the PV line
-                        pvMoves.moves.length = 0;
-                        pvMoves.moves.push(move);
-                        pvMoves.moves.push(...childPVMoves.moves);
+                    // update the PV line
+                    pvMoves.moves.length = 0;
+                    pvMoves.moves.push(move);
+                    pvMoves.moves.push(...childPVMoves.moves);
 
-                        // Extend the search time a bit if the score has dropped from the previous best move
-                        this.Timer.extended = depth > 1 && score < this.search.bestMove.score - 30;
+                    // Extend the search time a bit if the score has dropped from the previous best move
+                    this.Timer.extended = depth > 1 && score < this.search.bestMove.score - 30;
 
-                        this.search.bestMove = { move: bestMove, score: bestScore };
-                    }
+                    this.search.bestMove = { move: bestMove, score: bestScore };
 
                     if (score < beta) {
                         alpha = score;
@@ -2471,17 +2472,17 @@ class Khepri {
     }
 
     Quiescence(alpha: number, beta: number, depth: number) {
-        this.search.nodes++;
-        let flag = HashFlag.Alpha;
-
         // Check whether search time is up every 1000 nodes
         if (this.search.nodes % 1000 === 0) {
             this.CheckTime();
+
+            if (this.Timer.stop) {
+                return 0;
+            }
         }
 
-        if (this.Timer.stop) {
-            return 0;
-        }
+        let flag = HashFlag.Alpha;
+        this.search.nodes++;
 
         // Check the transposition table for matching position and score
         const { ttScore, ttMove } = this.ProbeTT(0, alpha, beta);
