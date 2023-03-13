@@ -1,5 +1,9 @@
 declare const __VERSION__: string;
 
+/**
+ * ENUMS
+ */
+
 export enum Square {
     a8, b8, c8, d8, e8, f8, g8, h8,
     a7, b7, c7, d7, e7, f7, g7, h7,
@@ -11,7 +15,7 @@ export enum Square {
     a1, b1, c1, d1, e1, f1, g1, h1, no_sq,
 }
 
-export const enum Pieces {
+export const enum PieceType {
     Pawn, Knight, Bishop, Rook, Queen, King,
 }
 
@@ -27,33 +31,45 @@ export const enum CastlingRights {
     BlackQueenside = 8,
 }
 
+enum Direction {
+    NORTH = 8,
+    SOUTH = -8,
+    EAST = 1,
+    WEST = -1,
+    NORTHWEST = 9,
+    NORTHEAST = 7,
+    SOUTHEAST = -9,
+    SOUTHWEST = -7,
+}
+
 // Moves types as defined at https://www.chessprogramming.org/Encoding_Moves
 const enum MoveType {
-    Normal,
+    Capture,
     Promotion,
     EnPassant,
     Castle,
 }
 
 const enum PromotionType {
-    Knight,
+    Knight = 1,
     Bishop,
     Rook,
     Queen,
 }
 
-const enum HashFlag {
-    Exact,
-    Alpha,
-    Beta,
+/**
+ * INTERFACES
+ */
+
+interface Piece {
+    Type: PieceType
+    Color: Color
 }
 
-type Move = number;
-
-export interface IPosition {
-    PiecesBB: bigint[][]
-    OccupanciesBB: [bigint, bigint]
-    Squares: Piece[]
+export interface BoardState {
+    PiecesBB: BigUint64Array
+    OccupanciesBB: BigUint64Array
+    Squares: (Piece | undefined)[]
     CastlingRights: number
     SideToMove: Color
     EnPassSq: Square
@@ -67,12 +83,7 @@ export interface IPosition {
     CastlingSquaresMask: Square[]
 }
 
-interface Piece {
-    Type: Pieces
-    Color: Color
-}
-
-interface State {
+interface StateCopy {
     CastlingRights: CastlingRights
     EnPassSq: Square
     Captured?: Piece
@@ -84,60 +95,22 @@ interface State {
 
 interface Zobrist {
     Pieces: bigint[][][]
-    EnPassant: bigint[]
-    Castle: bigint[]
+    EnPassant: BigUint64Array
+    Castle: BigUint64Array
     SideToMove: bigint
-}
-
-interface TTEntry {
-    Hash: bigint
-    BestMove: Move
-    Depth: number
-    Score: number
-    Flag: HashFlag
-}
-
-interface TTable {
-    Entries: TTEntry[]
-    Size: bigint
-}
-
-interface PawnHashEntry {
-    hash: bigint
-    wScore: { mg: number, eg: number }
-    bScore: { mg: number, eg: number }
-}
-
-interface PawnHashTable {
-    Entries: PawnHashEntry[]
-    Size: bigint
-}
-
-interface PVLine {
-    moves: Move[]
-}
-
-interface Search {
-    nodes: number
-    killers: number[][]
-    history: number[][][]
-    bestMove: { move: Move, score: number }
 }
 
 class Khepri {
     constructor() {
         this.Init();
         this.InitHashes();
-        this.SetTransTableSize();
     }
 
     readonly name = "KhepriChess";
     readonly version = __VERSION__; // replaced by webpack
     readonly author = "Kurt Peters";
 
-    // Flag to indicate if the game is Chess960/Fischer Random
-    isChess960 = false;
-
+    // Test positions
     static readonly positions = {
         empty: "8/8/8/8/8/8/8/8 b - - ",
         start: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
@@ -149,71 +122,8 @@ class Khepri {
         pos6: "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
     };
 
-    /***************************
-     * 
-     * Bitboard
-     * 
-     **************************/
-
-    SetBit(board: bigint, square: Square) {
-        return board |= 1n << this.SquareBigInt[square];
-    }
-
-    RemoveBit(board: bigint, square: Square) {
-        return board &= ~(1n << this.SquareBigInt[square]);
-    }
-
-    GetBit(board: bigint, square: Square) {
-        return board & (1n << this.SquareBigInt[square]);
-    }
-
-    CountBits(bitboard: bigint) {
-        // From https://graphics.stanford.edu/~seander/bithacks.html
-        // This appeared to be the fastest
-        const left32 = Number(bitboard & 0xffffffffn);
-        const right32 = Number(bitboard >> 32n);
-
-        function count32(n: number) {
-            n = n - ((n >> 1) & 0x55555555);
-            n = (n & 0x33333333) + ((n >> 2) & 0x33333333);
-            return ((n + (n >> 4) & 0xF0F0F0F) * 0x1010101) >> 24;
-        }
-
-        return count32(left32) + count32(right32);
-    }
-
-    GetLS1B(bitboard: bigint) {
-        if (bitboard) {
-            return this.CountBits((bitboard & -bitboard) - 1n);
-        }
-        
-        return -1;
-    }
-
-    PrintBitboard(board: bigint) {
-        for (let r = 0; r < 8; r++) {
-            let rank = '';
-            for (let f = 0; f < 8; f++) {
-            const square = r * 8 + f;
-
-            if (!f) {
-                rank += `${8 - r}  `;
-            }
-
-            rank += ` ${this.GetBit(board, square) ? '1' : '0'}`;
-            }
-            console.log(`${rank} \r\n`);
-        }
-
-        console.log('\r\n    a b c d e f g h');
-        console.log(`    Bitboard: ${board}`);
-    }
-
-    /***************************
-     * 
-     * Position
-     * 
-     **************************/
+    // Flag to indicate if the game is Chess960/Fischer Random
+    isChess960 = false;
 
     /* 
     * Array lookup for bigint of square is
@@ -228,975 +138,272 @@ class Khepri {
         40n, 41n, 42n, 43n, 44n, 45n, 46n, 47n,
         48n, 49n, 50n, 51n, 52n, 53n, 54n, 55n,
         56n, 57n, 58n, 59n, 60n, 61n, 62n, 63n, 64n,
-    ]
+    ];
 
-    readonly Position: IPosition = {
-        PiecesBB: [],
-        OccupanciesBB: [0n, 0n],
-        Squares: [],
-        CastlingRights: 0,
+    /* Used when loading a position from FEN */
+    private readonly CharToPiece = new Map([
+        ["P", { Type: PieceType.Pawn, Color: Color.White }],
+        ["N", { Type: PieceType.Knight, Color: Color.White }],
+        ["B", { Type: PieceType.Bishop, Color: Color.White }],
+        ["R", { Type: PieceType.Rook, Color: Color.White }],
+        ["Q", { Type: PieceType.Queen, Color: Color.White }],
+        ["K", { Type: PieceType.King, Color: Color.White }],
+        ["p", { Type: PieceType.Pawn, Color: Color.Black }],
+        ["n", { Type: PieceType.Knight, Color: Color.Black }],
+        ["b", { Type: PieceType.Bishop, Color: Color.Black }],
+        ["r", { Type: PieceType.Rook, Color: Color.Black }],
+        ["q", { Type: PieceType.Queen, Color: Color.Black }],
+        ["k", { Type: PieceType.King, Color: Color.Black }],
+    ]);
+
+    private readonly Zobrist: Zobrist = {
+        Pieces: Array.from(Array(2), () => Array.from(Array(6), () => new Array(64))),
+        EnPassant: new BigUint64Array(64),
+        Castle: new BigUint64Array(16),
+        SideToMove: 0n,
+    }
+
+    private readonly PhaseValues = [0, 1, 1, 2, 4, 0];
+    private readonly PhaseTotal = (this.PhaseValues[PieceType.Knight] * 4) + (this.PhaseValues[PieceType.Bishop] * 4) + (this.PhaseValues[PieceType.Rook] * 4) + (this.PhaseValues[PieceType.Queen] * 2);
+
+    private readonly BoardHistory: bigint[] = [];
+
+    readonly BoardState: BoardState = {
+        PiecesBB: new BigUint64Array(12), // 12 boards, one for each pieces and color
+        OccupanciesBB: new BigUint64Array(2), // 2 boards, 1 for each color
+        Squares: new Array(64).fill(undefined), // 64 squares, initialized to 0
         SideToMove: Color.White,
-        EnPassSq: 0,
+        EnPassSq: Square.no_sq,
         HalfMoves: 0,
         Ply: 0,
         Hash: 0n,
         PawnHash: 0n,
-        Phase: 0,
+        Phase: this.PhaseTotal,
+        CastlingRights: 0,
         CastlingPaths: [],
         CastlingRookSquares: [],
-        CastlingSquaresMask: [],
-    }
-
-    private readonly PositionHistory: bigint[] = [];
-
-    private readonly CharToPiece = new Map([
-        ["P", { Type: Pieces.Pawn, Color: Color.White }],
-        ["N", { Type: Pieces.Knight, Color: Color.White }],
-        ["B", { Type: Pieces.Bishop, Color: Color.White }],
-        ["R", { Type: Pieces.Rook, Color: Color.White }],
-        ["Q", { Type: Pieces.Queen, Color: Color.White }],
-        ["K", { Type: Pieces.King, Color: Color.White }],
-        ["p", { Type: Pieces.Pawn, Color: Color.Black }],
-        ["n", { Type: Pieces.Knight, Color: Color.Black }],
-        ["b", { Type: Pieces.Bishop, Color: Color.Black }],
-        ["r", { Type: Pieces.Rook, Color: Color.Black }],
-        ["q", { Type: Pieces.Queen, Color: Color.Black }],
-        ["k", { Type: Pieces.King, Color: Color.Black }],
-    ]);
-
-    /**
-     * Loads an FEN string into the engine
-     * @param fen The FEN string to load
-     */
-    LoadFEN(fen: string) {
-        this.Position.PiecesBB = [
-            [0n, 0n, 0n, 0n, 0n, 0n],
-            [0n, 0n, 0n, 0n, 0n, 0n],
-        ];
-        this.Position.OccupanciesBB = [0n, 0n];
-        this.Position.CastlingRights = 0;
-        this.Position.Squares = [];
-        this.Position.EnPassSq = Square.no_sq;
-        this.Position.Phase = this.PhaseTotal;
-        this.Position.CastlingSquaresMask = new Array(64).fill(15);
-
-        const pieces = fen.split(" ")[0].split("");
-
-        // Loop over each character in the FEN string
-        // Set bitboards according to characters
-        // for (let i = 0, square = 0; i < pieces.length; i++) {
-        let square = 0;
-        for (let i = 0; i < pieces.length; i++) {
-            const char = pieces[i];
-
-            switch (char) {
-                case "p": case "n": case "b": case "r": case "q": case "k":
-                case "P": case "N": case "B": case "R": case "Q": case "K": {
-                    const piece = this.CharToPiece.get(char) as Piece;
-
-                    this.PlacePiece(piece.Type, piece.Color, square);
-                    this.Position.Phase -= this.PhaseValues[piece.Type];
-                    square++;
-                    break;
-                }
-                case "1": case "2": case "3": case "4":
-                case "4": case "5": case "6": case "7": case "8": {
-                    square += parseInt(char);
-                    break;
-                }
-                case "/": {
-                    break;
-                }
-                default: {
-                    throw new Error(`Unable to parse FEN character: ${char}`);
-                }
-            }
-        }
-
-        // Set the side to move
-        this.Position.SideToMove = fen.split(' ')[1] === 'w' ? Color.White : Color.Black;
-
-        // Set castling rights
-        const castling = fen.split(' ')[2].split('');
-        for (const castle of castling) {
-            const side = castle.toUpperCase() === castle ? Color.White : Color.Black;
-            const kingSquare = this.GetLS1B(this.Position.PiecesBB[side][Pieces.King]);
-            this.Position.CastlingSquaresMask[kingSquare] = side === Color.White ? 12 : 3;
-
-            if (castle.toUpperCase() === "K") {
-                const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i > kingSquare);
-
-                if (side === Color.White) {
-                    this.Position.CastlingRights |= CastlingRights.WhiteKingside;
-                    this.Position.CastlingPaths[CastlingRights.WhiteKingside] = (this.betweenMasks[kingSquare][Square.g1] | this.betweenMasks[rookSquare][Square.f1]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
-                    this.Position.CastlingRookSquares[CastlingRights.WhiteKingside] = rookSquare;
-                    this.Position.CastlingSquaresMask[rookSquare] = 14;
-                }
-                else {
-                    this.Position.CastlingRights |= CastlingRights.BlackKingside;
-                    this.Position.CastlingPaths[CastlingRights.BlackKingside] = (this.betweenMasks[kingSquare][Square.g8] | this.betweenMasks[rookSquare][Square.f8]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
-                    this.Position.CastlingRookSquares[CastlingRights.BlackKingside] = rookSquare;
-                    this.Position.CastlingSquaresMask[rookSquare] = 11;
-                }
-            }
-            else if (castle.toUpperCase() === "Q") {
-                const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i < kingSquare);
-
-                if (side === Color.White) {
-                    this.Position.CastlingRights |= CastlingRights.WhiteQueenside;
-                    this.Position.CastlingPaths[CastlingRights.WhiteQueenside] = (this.betweenMasks[kingSquare][Square.c1] | this.betweenMasks[rookSquare][Square.d1]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
-                    this.Position.CastlingRookSquares[CastlingRights.WhiteQueenside] = rookSquare;
-                    this.Position.CastlingSquaresMask[rookSquare] = 13;
-                }
-                else {
-                    this.Position.CastlingRights |= CastlingRights.BlackQueenside;
-                    this.Position.CastlingPaths[CastlingRights.BlackQueenside] = (this.betweenMasks[kingSquare][Square.c8] | this.betweenMasks[rookSquare][Square.d8]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
-                    this.Position.CastlingRookSquares[CastlingRights.BlackQueenside] = rookSquare;
-                    this.Position.CastlingSquaresMask[rookSquare] = 7;
-                }
-            }
-            // Shredder-FEN castling notation for Chess960
-            else if (castle.toUpperCase() >= "A" && castle.toUpperCase() <= "H") {
-                // Kingside castle
-                if (castle.toUpperCase().charCodeAt(0) - 65 > (kingSquare & 7)) {
-                    const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i > kingSquare);
-
-                    if (side === Color.White) {
-                        this.Position.CastlingRights |= CastlingRights.WhiteKingside;
-                        this.Position.CastlingPaths[CastlingRights.WhiteKingside] = (this.betweenMasks[kingSquare][Square.g1] | this.betweenMasks[rookSquare][Square.f1] | this.squareBB[Square.g1] | this.squareBB[Square.f1]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
-                        this.Position.CastlingRookSquares[CastlingRights.WhiteKingside] = rookSquare;
-                        this.Position.CastlingSquaresMask[rookSquare] = 14;
-                    }
-                    else {
-                        this.Position.CastlingRights |= CastlingRights.BlackKingside;
-                        this.Position.CastlingPaths[CastlingRights.BlackKingside] = (this.betweenMasks[kingSquare][Square.g8] | this.betweenMasks[rookSquare][Square.f8] | this.squareBB[Square.g8] | this.squareBB[Square.f8]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
-                        this.Position.CastlingRookSquares[CastlingRights.BlackKingside] = rookSquare;
-                        this.Position.CastlingSquaresMask[rookSquare] = 11;
-                    }
-                }
-                // Queenside castle
-                else {
-                    if (side === Color.White) {
-                        const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i >= 56 && i < kingSquare);
-                        this.Position.CastlingRights |= CastlingRights.WhiteQueenside;
-                        this.Position.CastlingPaths[CastlingRights.WhiteQueenside] = (this.betweenMasks[kingSquare][Square.c1] | this.betweenMasks[rookSquare][Square.d1] | this.squareBB[Square.c1] | this.squareBB[Square.d1]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
-                        this.Position.CastlingRookSquares[CastlingRights.WhiteQueenside] = rookSquare;
-                        this.Position.CastlingSquaresMask[rookSquare] = 13;
-                    }
-                    else {
-                        const rookSquare = this.Position.Squares.findIndex((x, i) => x && x.Type === Pieces.Rook && x.Color === side && i < kingSquare);
-                        this.Position.CastlingRights |= CastlingRights.BlackQueenside;
-                        this.Position.CastlingPaths[CastlingRights.BlackQueenside] = (this.betweenMasks[kingSquare][Square.c8] | this.betweenMasks[rookSquare][Square.d8] | this.squareBB[Square.c8] | this.squareBB[Square.d8]) & ~(this.Position.PiecesBB[side][Pieces.King] | this.SetBit(0n, rookSquare));
-                        this.Position.CastlingRookSquares[CastlingRights.BlackQueenside] = rookSquare;
-                        this.Position.CastlingSquaresMask[rookSquare] = 7;
-                    }
-                }
-            }
-        }
-
-        // Set the en passant square
-        const enpassant = fen.split(' ')[3];
-        if (enpassant !== '-') {
-            const files = 'abcdefgh';
-            const file = files.indexOf(enpassant.split('')[0]);
-            const rank = 8 - parseInt(enpassant[1], 10);
-            const enPSquare = rank * 8 + file;
-
-            // Only set the en passant square if an opponent pawn can make that move
-            if (this.PawnAttacks[this.Position.SideToMove ^ 1][enPSquare] & this.Position.PiecesBB[this.Position.SideToMove][Pieces.Pawn]) {
-                this.Position.EnPassSq = enPSquare;
-            }
-        }
-
-        // Set the game ply. If ply is not set in FEN, set it to 0
-        this.Position.Ply = parseInt(fen.split(' ')[5]) * 2 || 0;
-        // Ply is only incremented after black's move,
-        // so if it's black's turn, we have to decrease by 1
-        if (this.Position.SideToMove === Color.Black) {
-            this.Position.Ply--;
-        }
-
-        // Set the halfmove clock
-        this.Position.HalfMoves = parseInt(fen.split(' ')[4]) || 0;
-
-        // Generate the hashes for the position
-        const { hash, pawnHash } = this.GenerateHashes();
-        this.Position.Hash = hash;
-        this.Position.PawnHash = pawnHash;
-
-        this.PositionHistory.length = 0;
-        this.PositionHistory[0] = this.Position.Hash;
-
-        this.KingSquares[0] = 0;
-        this.KingSquares[1] = 0;
-    }
-
-    /**
-     * Prints a graphical representation of the current board position to the console
-     */
-    PrintBoard() {
-        const unicode = [ ["♙", "♘", "♗", "♖", "♕", "♔"], ["♟︎", "♞", "♝", "♜", "♛", "♚"] ];
-        for (let rank = 0; rank < 8; rank++) {
-            let r = "";
-            for (let file = 0; file < 8; file++) {
-                let square = rank * 8 + file;
-                let piece = this.Position.Squares[square] ?? null;
-
-                if (!file) {
-                    r += `${8 - rank} `;
-                }
-
-                if (piece) {
-                    r += ` ${unicode[piece.Color][piece.Type]}`;
-                }
-                else {
-                    r += ' . ';
-                }
-            }
-            console.log(`${r} \r\n`);
-        }
-        console.log('\r\n   a  b  c  d  e  f  g  h');
-        console.log(`Side to move: ${this.Position.SideToMove === Color.White ? 'white' : 'black'}`);
-        console.log(`En passant: ${this.Position.EnPassSq !== Square.no_sq ? Square[this.Position.EnPassSq] : "no"}`);
-        console.log(`Castling rights: ${this.Position.CastlingRights & CastlingRights.WhiteKingside ? 'K' : '-'}${this.Position.CastlingRights & CastlingRights.WhiteQueenside ? 'Q' : '-'}${this.Position.CastlingRights & CastlingRights.BlackKingside ? 'k' : '-'}${this.Position.CastlingRights & CastlingRights.BlackQueenside ? 'q' : '-'}`);
-        console.log(`Plies: ${this.Position.Ply}`);
-    }
-
-    /***************************
-     * 
-     * MoveGen
-     * 
-     **************************/
-
-    /**
-     * Generate possible moves with the currently loaded position
-     */
-    GenerateMoves(tacticalOnly = false) {
-        // clear the existing move list
-        const moveList: Move[] = [];
-        let attacked = 0xffffffffffffffffn; // default to full board
-
-        if (tacticalOnly) {
-            attacked = this.Position.OccupanciesBB[this.Position.SideToMove ^ 1];
-            this.GeneratePawnAttacks(moveList);
-        }
-        else {
-            this.GeneratePawnMoves(moveList, attacked);
-            this.GenerateCastlingMoves(moveList);
-        }
-
-        // Start at Knight because Pawns are generated separately
-        for (let piece = Pieces.Knight; piece <= Pieces.King; piece++) {
-            let bitboard = this.Position.PiecesBB[this.Position.SideToMove][piece];
-
-            while (bitboard) {
-                const square = this.GetLS1B(bitboard);
-
-                switch (piece) {
-                    case Pieces.Knight: {
-                        this.GenerateKnightMoves(moveList, square, attacked);
-                        break;
-                    }
-                    case Pieces.Bishop: {
-                        this.GenerateBishopMoves(moveList, square, attacked);
-                        break;
-                    }
-                    case Pieces.Rook: {
-                        this.GenerateRookMoves(moveList, square, attacked);
-                        break;
-                    }
-                    case Pieces.Queen: {
-                        this.GenerateQueenMoves(moveList, square, attacked);
-                        break;
-                    }
-                    case Pieces.King: {
-                        this.GenerateKingMoves(moveList, square, attacked);
-                        break;
-                    }
-                }
-
-                bitboard = this.RemoveBit(bitboard, square);
-            }
-        }
-
-        return moveList;
-    }
-
-    GenerateEvasions() {
-        const moveList: Move[] = [];
-        let attacked = 0xffffffffffffffffn; // default to full board
-        const kingSquare = this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]);
-        let attackers = this.AttacksToByColor(kingSquare, this.Position.SideToMove ^ 1);
-
-        // All king moves even in check
-        this.GenerateKingMoves(moveList, kingSquare, attacked);
-        
-        // If there are multiple pieces giving check, moving the king is the only option
-        if (this.CountBits(attackers) > 1) {
-            return moveList;
-        }
-
-        attacked = attackers;
-
-        const attackerSquare = this.GetLS1B(attackers);
-        const piece = this.Position.Squares[attackerSquare];
-
-        // If the attacking piece is a slider, moves onto the attacker's ray are also valid
-        if (piece.Type >= Pieces.Bishop) {
-            attacked |= this.betweenMasks[kingSquare][attackerSquare];
-        }
-
-        this.GeneratePawnMoves(moveList, attacked);
-
-        for (let piece = Pieces.Knight; piece < Pieces.King; piece++) {
-            let bitboard = this.Position.PiecesBB[this.Position.SideToMove][piece];
-
-            while (bitboard) {
-                const square = this.GetLS1B(bitboard);
-
-                switch (piece) {
-                    case Pieces.Knight: {
-                        this.GenerateKnightMoves(moveList, square, attacked);
-                        break;
-                    }
-                    case Pieces.Bishop: {
-                        this.GenerateBishopMoves(moveList, square, attacked);
-                        break;
-                    }
-                    case Pieces.Rook: {
-                        this.GenerateRookMoves(moveList, square, attacked);
-                        break;
-                    }
-                    case Pieces.Queen: {
-                        this.GenerateQueenMoves(moveList, square, attacked);
-                        break;
-                    }
-                }
-
-                bitboard = this.RemoveBit(bitboard, square);
-            }
-        }
-
-        return moveList;
-    }
-
-    /**
-     * Generate pawn moves for the loaded position
-     */
-    GeneratePawnMoves(moveList: Move[], attacked: bigint) {
-        let pawnBB = this.Position.PiecesBB[this.Position.SideToMove][Pieces.Pawn];
-        const emptyBB = ~(this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black]);
-
-        let singlePushTargets = ((this.Position.SideToMove === Color.White) ? (pawnBB >> 8n) : (pawnBB << 8n)) & emptyBB;
-        let doublePushTargets = (singlePushTargets >> 8n) & 0x000000FF00000000n & emptyBB;
-        if (this.Position.SideToMove === Color.Black) {
-            doublePushTargets = (singlePushTargets << 8n) & 0x00000000FF000000n & emptyBB;
-        }
-
-        // push targets to attacker squares (or all squares if generating all moves)
-        singlePushTargets &= attacked;
-        doublePushTargets &= attacked;
-
-        // Add non attack moves
-        while (singlePushTargets) {
-            const toSquare = this.GetLS1B(singlePushTargets);
-            const fromSquare = this.Position.SideToMove === Color.White ? toSquare + 8 : toSquare - 8;
-
-            // Add pawn promotions
-            if (this.Position.SideToMove === Color.White ? toSquare <= Square.h8 : toSquare >= Square.a1) {
-                moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Knight));
-                moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Bishop));
-                moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Rook));
-                moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Queen));
-            }
-            else {
-                // Add quiet moves
-                moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Normal));
-            }
-
-            singlePushTargets = this.RemoveBit(singlePushTargets, toSquare);
-        }
-
-        while (doublePushTargets) {
-            const toSquare = this.GetLS1B(doublePushTargets);
-            const fromSquare = this.Position.SideToMove === Color.White ? toSquare + 16 : toSquare - 16;
-
-            moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Normal));
-
-            doublePushTargets = this.RemoveBit(doublePushTargets, toSquare);
-        }
-
-        while (pawnBB) {
-            const fromSquare = this.GetLS1B(pawnBB);
-            
-            let attacks = this.PawnAttacks[this.Position.SideToMove][fromSquare] & this.Position.OccupanciesBB[this.Position.SideToMove ^ 1] & attacked;
-
-            while (attacks) {
-                const toSquare = this.GetLS1B(attacks);
-
-                // Pawn attacks to promotion
-                if (this.Position.SideToMove === Color.White ? toSquare <= Square.h8 : toSquare >= Square.a1) {
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Knight));
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Bishop));
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Rook));
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Queen));
-                }
-                else {
-                    // Regular captures
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Normal));
-                }
-
-                attacks = this.RemoveBit(attacks, toSquare);
-            }
-
-            // en passant captures
-            if (this.Position.EnPassSq !== Square.no_sq) {
-                const enpassantAttacks = this.PawnAttacks[this.Position.SideToMove][fromSquare] & (1n << this.SquareBigInt[this.Position.EnPassSq]);
-
-                if (enpassantAttacks) {
-                    const toSquare = this.GetLS1B(enpassantAttacks);
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.EnPassant));
-                }
-            }
-
-            pawnBB = this.RemoveBit(pawnBB, fromSquare);
-        }
-    }
-
-    GeneratePawnAttacks(moveList: Move[]) {
-        let pawnBB = this.Position.PiecesBB[this.Position.SideToMove][Pieces.Pawn];
-
-        while (pawnBB) {
-            const fromSquare = this.GetLS1B(pawnBB);
-            
-            let attacks = this.PawnAttacks[this.Position.SideToMove][fromSquare] & this.Position.OccupanciesBB[this.Position.SideToMove ^ 1];
-
-            while (attacks) {
-                const toSquare = this.GetLS1B(attacks);
-
-                // Pawn attacks to promotion
-                if (this.Position.SideToMove === Color.White ? toSquare <= Square.h8 : toSquare >= Square.a1) {
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Knight));
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Bishop));
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Rook));
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Promotion, PromotionType.Queen));
-                }
-                else {
-                    // Regular captures
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.Normal));
-                }
-
-                attacks = this.RemoveBit(attacks, toSquare);
-            }
-
-            // en passant captures
-            if (this.Position.EnPassSq !== Square.no_sq) {
-                const enpassantAttacks = this.PawnAttacks[this.Position.SideToMove][fromSquare] & (1n << this.SquareBigInt[this.Position.EnPassSq]);
-
-                if (enpassantAttacks) {
-                    const toSquare = this.GetLS1B(enpassantAttacks);
-                    moveList.push(this.EncodeMove(fromSquare, toSquare, MoveType.EnPassant));
-                }
-            }
-
-            pawnBB = this.RemoveBit(pawnBB, fromSquare);
-        }
-    }
-
-    GenerateCastlingMoves(moveList: Move[]) {
-        const kingSquare = this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]);
-
-        if (this.IsSquareAttacked(kingSquare, this.Position.SideToMove ^ 1)) {
-            return;
-        }
-
-        const bothBB = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-
-        if (this.Position.SideToMove === Color.White) {
-            if (this.Position.CastlingRights & CastlingRights.WhiteKingside) {
-                let path = this.betweenMasks[kingSquare][Square.h1];
-                if ((this.Position.CastlingPaths[CastlingRights.WhiteKingside] & bothBB) === 0n) {
-                    let canCastle = true;
-                    while (canCastle && path) {
-                        const square = this.GetLS1B(path);
-                        path = this.RemoveBit(path, square);
-                        if (this.IsSquareAttacked(square, this.Position.SideToMove ^ 1)) {
-                            canCastle = false;
-                        }
-                    }
-                    if (canCastle) {
-                        moveList.push(this.EncodeMove(kingSquare, this.Position.CastlingRookSquares[CastlingRights.WhiteKingside], MoveType.Castle));
-                    }
-                }
-            }
-    
-            if (this.Position.CastlingRights & CastlingRights.WhiteQueenside) {
-                let path = this.betweenMasks[kingSquare][Square.c1];
-                if ((this.Position.CastlingPaths[CastlingRights.WhiteQueenside] & bothBB) === 0n) {
-                    let canCastle = true;
-                    while (canCastle && path) {
-                        const square = this.GetLS1B(path);
-                        path = this.RemoveBit(path, square);
-                        if (this.IsSquareAttacked(square, this.Position.SideToMove ^ 1)) {
-                            canCastle = false;
-                        }
-                    }
-                    if (canCastle) {
-                        moveList.push(this.EncodeMove(kingSquare, this.Position.CastlingRookSquares[CastlingRights.WhiteQueenside], MoveType.Castle));
-                    }
-                }
-            }
-        }
-        else {            
-            if (this.Position.CastlingRights & CastlingRights.BlackKingside) {
-                let path = this.betweenMasks[kingSquare][Square.h8];
-                if ((this.Position.CastlingPaths[CastlingRights.BlackKingside] & bothBB) === 0n) {
-                    let canCastle = true;
-                    while (canCastle && path) {
-                        const square = this.GetLS1B(path);
-                        path = this.RemoveBit(path, square);
-                        if (this.IsSquareAttacked(square, this.Position.SideToMove ^ 1)) {
-                            canCastle = false;
-                        }
-                    }
-                    if (canCastle) {
-                        moveList.push(this.EncodeMove(kingSquare, this.Position.CastlingRookSquares[CastlingRights.BlackKingside], MoveType.Castle));
-                    }
-                }
-            }
-    
-            if (this.Position.CastlingRights & CastlingRights.BlackQueenside) {
-                let path = this.betweenMasks[kingSquare][Square.c8];
-                if ((this.Position.CastlingPaths[CastlingRights.BlackQueenside] & bothBB) === 0n) {
-                    let canCastle = true;
-                    while (canCastle && path) {
-                        const square = this.GetLS1B(path);
-                        path = this.RemoveBit(path, square);
-                        if (this.IsSquareAttacked(square, this.Position.SideToMove ^ 1)) {
-                            canCastle = false;
-                        }
-                    }
-                    if (canCastle) {
-                        moveList.push(this.EncodeMove(kingSquare, this.Position.CastlingRookSquares[CastlingRights.BlackQueenside], MoveType.Castle));
-                    }
-                }
-            }
-        }
-    }
-
-    GenerateKnightMoves(moveList: Move[], square: Square, attacked: bigint) {
-        let movesBB = (this.KnightAttacks[square] & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
-
-        while (movesBB) {
-            const toSquare = this.GetLS1B(movesBB);
-            moveList.push(this.EncodeMove(square, toSquare, MoveType.Normal));
-            movesBB = this.RemoveBit(movesBB, toSquare);
-        }
-    }
-
-    GenerateBishopAttacks(occupancy: bigint, square: Square) {
-        occupancy = BigInt.asUintN(64, (occupancy & this.BishopMasks[square]));
-        occupancy = BigInt.asUintN(64, occupancy * this.BishopMagicNumbers[square]);
-        occupancy >>= 64n - this.BishopRelevantBits[square];
-
-        return this.BishopAttacks[square][Number(occupancy)];
-    }
-
-    GenerateBishopMoves(moveList: Move[], square: Square, attacked: bigint) {
-        let attacks = (this.GenerateBishopAttacks(this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black], square) & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
-
-        while (attacks) {
-            const toSquare = this.GetLS1B(attacks);
-            moveList.push(this.EncodeMove(square, toSquare, MoveType.Normal));
-            attacks = this.RemoveBit(attacks, toSquare);
-        }
-    }
-
-    GenerateRookAttacks(occupancy: bigint, square: Square) {
-        occupancy = BigInt.asUintN(64, occupancy & this.RookMasks[square]);
-        occupancy = BigInt.asUintN(64, occupancy * this.RookMagicNumbers[square]);
-        occupancy >>= 64n - this.RookRelevantBits[square];
-
-        return this.RookAttacks[square][Number(occupancy)];
-    }
-
-    GenerateRookMoves(moveList: Move[], square: Square, attacked: bigint) {
-        let attacks = (this.GenerateRookAttacks(this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black], square) & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
-
-        while (attacks) {
-            const toSquare = this.GetLS1B(attacks);
-            moveList.push(this.EncodeMove(square, toSquare, MoveType.Normal));
-            attacks = this.RemoveBit(attacks, toSquare);
-        }
-    }
-
-    GenerateQueenMoves(moveList: Move[], square: Square, attacked: bigint) {
-        const occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-        let attacks = ((this.GenerateBishopAttacks(occupancy, square) | this.GenerateRookAttacks(occupancy, square)) & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
-
-        while (attacks) {
-            const toSquare = this.GetLS1B(attacks);
-            moveList.push(this.EncodeMove(square, toSquare, MoveType.Normal));
-            attacks = this.RemoveBit(attacks, toSquare);
-        }
-    }
-
-    GenerateKingMoves(moveList: Move[], square: Square, attacked: bigint) {
-        let movesBB = (this.KingAttacks[square] & ~this.Position.OccupanciesBB[this.Position.SideToMove]) & attacked;
-
-        while (movesBB) {
-            const toSquare = this.GetLS1B(movesBB);
-            moveList.push(this.EncodeMove(square, toSquare, MoveType.Normal));
-            movesBB = this.RemoveBit(movesBB, toSquare);
-        }
-    }
-
-    /**
-     * Encode the given move
-     */
-    EncodeMove(from: Square, to: Square, type: MoveType, promotionType = PromotionType.Knight) {
-        return from | (to << 6) | (type << 12) | (promotionType << 14);
-    }
-
-    MoveIsCapture(move: Move) {
-        // Chess960 castles are encoded as king takes rook, so we have to exclude those here
-        const moveType = (move & 0x3f80) >> 12;
-        return (moveType !== MoveType.Castle && this.Position.Squares[(move & 0xfc0) >> 6] !== undefined) || (moveType === MoveType.EnPassant);
-    }
-
-    MoveIsPromotion(move: Move) {
-        return (move & 0x3f80) >> 12 === MoveType.Promotion;
-    }
-
-    IsSquareAttacked(square: Square, side: Color) {
-        const bishops = this.Position.PiecesBB[side][Pieces.Bishop];
-        const rooks = this.Position.PiecesBB[side][Pieces.Rook];
-        const queens = this.Position.PiecesBB[side][Pieces.Queen];
-
-        if (this.PawnAttacks[side ^ 1][square] & this.Position.PiecesBB[side][Pieces.Pawn]) {
-            return true;
-        }
-        if (this.KnightAttacks[square] & this.Position.PiecesBB[side][Pieces.Knight]) { 
-            return true;
-        }
-
-        const occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-        const bishopQueens = bishops | queens;
-        // Bishop and Rook attacks are expensive to calcuate, so check the masks first to see if the call even needs to be made
-        if ((this.attackRays[Pieces.Bishop - Pieces.Bishop][square] & bishopQueens) && this.GenerateBishopAttacks(occupancy, square) & bishopQueens) {
-            return true;
-        }
-        
-        const rookQueens = rooks | queens;
-        if ((this.attackRays[Pieces.Rook - Pieces.Bishop][square] & rookQueens) && this.GenerateRookAttacks(occupancy, square) & rookQueens) {
-            return true;
-        }
-        if (this.KingAttacks[square] & this.Position.PiecesBB[side][Pieces.King]) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /***************************
-     * 
-     * Move
-     * 
-     **************************/
-
-    private readonly stateCopy: State[] = [];
-
-    /**
-     * Makes a move
-     * @param move a move number
-     * @returns False if the move would leave side's own king in check, otherwise true
-     */
-    MakeMove(move: Move) {
-        const from = move & 0x3f;
-        const to = (move & 0xfc0) >> 6;
-        const moveType = (move & 0x3f80) >> 12;
-        const piece = this.Position.Squares[from];
-        let captured: Piece | undefined = moveType === MoveType.EnPassant ? { Type: Pieces.Pawn, Color: this.Position.SideToMove ^ 1 } : this.Position.Squares[to];
-
-        this.stateCopy.push({
-            CastlingRights: this.Position.CastlingRights,
-            EnPassSq: this.Position.EnPassSq,
-            Captured: captured,
-            Hash: this.Position.Hash,
-            PawnHash: this.Position.PawnHash,
-            HalfMoves: this.Position.HalfMoves,
-            Phase: this.Position.Phase,
-        });
-
-        this.Position.Ply++;
-        this.Position.HalfMoves++;
-
-        // Clear the en passant square
-        if (this.Position.EnPassSq !== Square.no_sq) {
-            this.Position.Hash ^= this.Zobrist.EnPassant[this.Position.EnPassSq];
-            this.Position.EnPassSq = Square.no_sq;
-        }
-
-        if (moveType === MoveType.Castle) {
-            this.DoCastle(piece, from, to);
-        }
-        else {
-            if (captured !== undefined || moveType === MoveType.EnPassant) {
-                let captureSquare = to;
-    
-                if (moveType === MoveType.EnPassant) {
-                    captureSquare = piece.Color === Color.White ? to + 8 : to - 8;
-                }
-    
-                this.RemovePiece(captured.Type, captured.Color, captureSquare);
-                this.Position.HalfMoves = 0;
-
-                this.Position.Hash ^= this.Zobrist.Pieces[captured.Color][captured.Type][to];
-
-                this.Position.Phase += this.PhaseValues[captured.Type];
-
-                if (captured.Type === Pieces.Pawn) {
-                    this.Position.PawnHash ^= this.Zobrist.Pieces[captured.Color][captured.Type][to];
-                }
-            }
-    
-            this.MovePiece(piece, from, to);
-
-            this.Position.Hash ^= this.Zobrist.Pieces[piece.Color][piece.Type][from] ^ this.Zobrist.Pieces[piece.Color][piece.Type][to];
-    
-            if (piece.Type === Pieces.Pawn) {
-                this.Position.HalfMoves = 0;
-                this.Position.PawnHash ^= this.Zobrist.Pieces[piece.Color][piece.Type][from] ^ this.Zobrist.Pieces[piece.Color][piece.Type][to];
-    
-                if (moveType === MoveType.Promotion) {
-                    const promotionType: Piece = { Type: (move >> 14) + Pieces.Knight, Color: piece.Color };
-                    this.RemovePiece(piece.Type, piece.Color, to);
-                    this.PlacePiece(promotionType.Type, promotionType.Color, to);
-                    this.Position.Phase += this.PhaseValues[Pieces.Pawn];
-                    this.Position.Phase -= this.PhaseValues[promotionType.Type];
-                    this.Position.Hash ^= this.Zobrist.Pieces[piece.Color][piece.Type][to] ^ this.Zobrist.Pieces[promotionType.Color][promotionType.Type][to];
-                    this.Position.PawnHash ^= this.Zobrist.Pieces[piece.Color][piece.Type][to];
-                }
-                // If a pawn double push, set the en passant square
-                else if ((to ^ from) === 16) {
-                    this.Position.EnPassSq = piece.Color === Color.White ? to + 8 : to - 8;
-                    this.Position.Hash ^= this.Zobrist.EnPassant[this.Position.EnPassSq];
-                }
-            }
-        }
-
-        // update castling rights
-        this.Position.Hash ^= this.Zobrist.Castle[this.Position.CastlingRights];
-        this.Position.CastlingRights &= this.Position.CastlingSquaresMask[from] & this.Position.CastlingSquaresMask[to];
-        this.Position.Hash ^= this.Zobrist.Castle[this.Position.CastlingRights];
-
-        // Update the side to move
-        this.Position.SideToMove ^= 1;
-        this.Position.Hash ^= this.Zobrist.SideToMove;
-
-        this.PositionHistory[this.PositionHistory.length] = this.Position.Hash;
-
-        // Because the move generator generates pseudo-legal moves,
-        // The move that was just made might have left the side-to-move's king in check
-        // Make sure that hasn't happened
-        return !this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove ^ 1][Pieces.King]), this.Position.SideToMove);
-    }
-
-    UnmakeMove(move: Move) {
-        const state = this.stateCopy.pop() as State;
-
-        this.Position.Ply--;
-
-        this.PositionHistory.pop();
-
-        // Replace current position properties with those retreived from the state
-        this.Position.CastlingRights = state.CastlingRights;
-        this.Position.EnPassSq = state.EnPassSq;
-        this.Position.HalfMoves = state.HalfMoves;
-        this.Position.Phase = state.Phase;
-
-        // Flip the side to move
-        this.Position.SideToMove ^= 1;
-
-        const from = move & 0x3f;
-        const to = (move & 0xfc0) >> 6;
-        const moveType = (move & 0x3f80) >> 12;
-        const piece = this.Position.Squares[to];
-
-        if (moveType === MoveType.Castle) {
-            this.UndoCastle(from, to);
-        }
-        else if (moveType === MoveType.Promotion) {
-            this.RemovePiece(piece.Type, piece.Color, to);
-            this.PlacePiece(Pieces.Pawn, piece.Color, from);
-
-            if (state.Captured) {
-                this.PlacePiece(state.Captured.Type, state.Captured.Color, to);
-            }
-        }
-        else {
-            this.MovePiece(piece, to, from);
-
-            if (state.Captured) {
-                let captureSquare = to;
-                let captured = state.Captured;
-
-                if (moveType === MoveType.EnPassant) {
-                    captureSquare = piece.Color === Color.White ? to + 8 : to - 8;
-                }
-
-                this.PlacePiece(captured.Type, captured.Color, captureSquare);
-            }
-        }
-
-        // Set hash to previous value
-        this.Position.Hash = state.Hash;
-        this.Position.PawnHash = state.PawnHash;
-    }
-
-    DoCastle(piece: Piece, from: Square, to: Square) {
-        const kingSide = to > from;
-        let kingTo = Square.g1 ^ (piece.Color * 56);
-        let rookTo = Square.f1 ^ (piece.Color * 56);
-
-        if (!kingSide) {
-            kingTo = Square.c1 ^ (piece.Color * 56);
-            rookTo = Square.d1 ^ (piece.Color * 56);
-        }
-        const rookFrom = to;
-
-        // Remove the king and rook
-        this.RemovePiece(Pieces.Rook, piece.Color, rookFrom);
-        this.RemovePiece(piece.Type, piece.Color, from);
-
-        // Place the king and rook on their squares
-        this.PlacePiece(Pieces.Rook, piece.Color, rookTo);
-        this.PlacePiece(piece.Type, piece.Color, kingTo);
-
-        this.Position.Hash ^= this.Zobrist.Pieces[piece.Color][Pieces.Rook][rookFrom] ^ this.Zobrist.Pieces[piece.Color][Pieces.Rook][rookTo];
-    }
-
-    UndoCastle(from: Square, to: Square) {
-        const color = this.Position.SideToMove;
-        const kingSide = to > from;
-        let kingTo = Square.g1 ^ (color * 56);
-        let rookTo = Square.f1 ^ (color * 56);
-
-        if (!kingSide) {
-            kingTo = Square.c1 ^ (color * 56);
-            rookTo = Square.d1 ^ (color * 56);
-        }
-        const rookFrom = to;
-
-        this.RemovePiece(Pieces.Rook, color, rookTo);
-        this.RemovePiece(Pieces.King, color, kingTo);
-        this.PlacePiece(Pieces.Rook, color, rookFrom);
-
-        // Move the king back
-        this.PlacePiece(Pieces.King, color, from);
-    }
-
-    MakeNullMove() {
-        this.stateCopy.push({
-            CastlingRights: this.Position.CastlingRights,
-            EnPassSq: this.Position.EnPassSq,
-            Hash: this.Position.Hash,
-            HalfMoves: this.Position.HalfMoves,
-            PawnHash: this.Position.PawnHash,
-            Phase: this.Position.Phase,
-        });
-
-        if (this.Position.EnPassSq !== Square.no_sq) {
-            this.Position.Hash ^= this.Zobrist.EnPassant[this.Position.EnPassSq];
-            this.Position.EnPassSq = Square.no_sq;
-        }
-        this.Position.HalfMoves = 0;
-        this.Position.SideToMove ^= 1;
-        this.Position.Hash ^= this.Zobrist.SideToMove;
-        this.Position.Ply++;
-    }
-
-    UnmakeNullMove() {
-        const state = this.stateCopy.pop() as State;
-
-        this.Position.CastlingRights = state.CastlingRights;
-        this.Position.EnPassSq = state.EnPassSq;
-        this.Position.HalfMoves = state.HalfMoves;
-        this.Position.SideToMove ^= 1;
-        this.Position.Hash = state.Hash;
-        this.Position.PawnHash = state.PawnHash;
-        this.Position.Ply--;
-        this.Position.Phase = state.Phase;
-    }
-
-    MovePiece(piece: Piece, from: Square, to: Square) {
-        const moveBB = this.squareBB[from] | this.squareBB[to];
-        this.Position.PiecesBB[piece.Color][piece.Type] ^= moveBB;
-        this.Position.OccupanciesBB[piece.Color] ^= moveBB;
-        delete this.Position.Squares[from];
-        this.Position.Squares[to] = piece;
-    }
-
-    RemovePiece(piece: Pieces, color: Color, square: Square) {
-        this.Position.PiecesBB[color][piece] = this.RemoveBit(this.Position.PiecesBB[color][piece], square);
-        this.Position.OccupanciesBB[color] = this.RemoveBit(this.Position.OccupanciesBB[color], square);
-        delete this.Position.Squares[square];
-    }
-
-    PlacePiece(piece: Pieces, color: Color, square: Square) {
-        this.Position.PiecesBB[color][piece] = this.SetBit(this.Position.PiecesBB[color][piece], square);
-        this.Position.OccupanciesBB[color] = this.SetBit(this.Position.OccupanciesBB[color], square);
-        this.Position.Squares[square] = { Type: piece, Color: color };
-    }
-
-    PrettyPrintMove(move: Move) {
-        const from = move & 0x3f;
-        let to = (move & 0xfc0) >> 6;
-        const type = (move & 0x3f80) >> 12;
-
-        if (type === MoveType.Castle && !this.isChess960) {
-            to = to > from ? to - 1 : to + 2;
-        }
-
-        let prettymove = `${Square[from]}${Square[to]}`;
-        if (type === MoveType.Promotion) {
-            const promotionType = move >> 14;
-            if (promotionType === PromotionType.Knight) {
-                prettymove += "n";
-            }
-            if (promotionType === PromotionType.Bishop) {
-                prettymove += "b";
-            }
-            if (promotionType === PromotionType.Rook) {
-                prettymove += "r";
-            }
-            if (promotionType === PromotionType.Queen) {
-                prettymove += "q";
-            }
-        }
-        return prettymove;
-    }
-
-    /***************************
-     * 
-     * Setup
-     * 
-     **************************/
-
-    readonly rankMasks: bigint[] = [];
-    readonly fileMasks: bigint[] = [];
-    readonly isolatedMasks: bigint[] = [];
-    readonly passedMasks: bigint[][] = Array(2).fill(0).map(() => Array(64).fill(0));
-    private readonly betweenMasks: bigint[][] = Array(64).fill(0n).map(() => Array(64).fill(0n));
-    readonly attackRays: bigint[][] = Array.from(Array(3), () => new Array(64).fill(0n));
-    readonly squareBB: bigint[] = [];
-    readonly distanceBetween: Square[][] = Array(64).fill(0n).map(() => Array(64).fill(0n));
+        CastlingSquaresMask: new Array(64).fill(15),
+    };
+
+    readonly rankMasks: BigUint64Array = new BigUint64Array(64); // mask is done per square
+    readonly fileMasks: BigUint64Array = new BigUint64Array(64); // mask is done per square
+    readonly isolatedMasks: BigUint64Array = new BigUint64Array(64); // mask is done per square
+    readonly passedMasks: bigint[][] = Array(2).fill(0).map(() => Array(64).fill(0)); // passed pawn masked (all squares ahead in the same file and both adjacent files)
+    private readonly betweenMasks: bigint[][] = Array(64).fill(0n).map(() => Array(64).fill(0n)); // mask of all squares between two
+    readonly attackRays: bigint[][] = Array.from(Array(3), () => new Array(64).fill(0n)); // sliding piece attacks on an empty board
+    readonly squareBB: BigUint64Array = new BigUint64Array(64); // Bitboard for single set square
+    readonly distanceBetween: Square[][] = Array(64).fill(0n).map(() => Array(64).fill(0n)); // distance between two squares
 
     private readonly notAFile = 18374403900871474942n;
     private readonly notHFile = 9187201950435737471n;
     private readonly notHGFile = 4557430888798830399n;
     private readonly notABFile = 18229723555195321596n;
 
+    readonly PawnAttacks: BigUint64Array = new BigUint64Array(128); // both white and black attacks, so 128
+    readonly KnightAttacks: BigUint64Array = new BigUint64Array(64);
+    readonly KingAttacks: BigUint64Array = new BigUint64Array(64);
+    private readonly BishopMasks: BigUint64Array = new BigUint64Array(64);
+    private readonly BishopAttacks: bigint[][] = Array.from(Array(64), () => new Array(512));
+    private readonly RookMasks: BigUint64Array = new BigUint64Array(64);
+    private readonly RookAttacks: bigint[][] = Array.from(Array(64), () => new Array(4096));
+
+    private readonly BishopMagicNumbers = [
+        0x2004200884050840n, 0x410100220842020n, 0x4008108408800844n, 0x4188204040844200n, 0x2044030841204080n, 0x5008229010048001n, 0x48809008228000n, 0xa00210050100800n,
+        0x40121020020c006an, 0x1441004012828n, 0x5188202420508n, 0x1106404208c00a1n, 0x2820884841010000n, 0x1800020802480841n, 0x48440048041008c0n, 0x128c1a020686a800n,
+        0x4808011191100080n, 0x885402008208102n, 0x204000818002008n, 0x28000c204010a0n, 0x204a000404a20020n, 0x4001000020a01000n, 0x9008912044100888n, 0x5603c082090901n,
+        0x6620700048230800n, 0x18100d00820c1c02n, 0x49222002c040403n, 0x20808088020002n, 0x4038c000280201an, 0x2080836809011n, 0x102008432280100n, 0x201c302011280n,
+        0x121008040122c400n, 0x104014801200211n, 0x3800223400080800n, 0x14020080480080n, 0x2004040400001010n, 0xd0510040460041n, 0x1180082010460n, 0x4208c0040370504n,
+        0x12010440002200n, 0x40104208440020a0n, 0x1d0c0048001404n, 0x804204010452200n, 0xa08102010401208n, 0x230115001002020n, 0x2008028082040402n, 0x408080060480380n,
+        0x1010802402080n, 0x403088090086800n, 0x20a0020201041000n, 0x200a8042420e0800n, 0x8004008a1010400n, 0x910230010004n, 0xc0100200811040n, 0x2202102307050410n,
+        0x20208200904000n, 0x4002104100411n, 0x8010000044040490n, 0xa0008040840400n, 0x1006001110121201n, 0xc00c4088017108n, 0x2800080210020210n, 0x60200a1002018910n, 
+    ];
+
+    private readonly RookMagicNumbers = [
+        0x80016418400081n, 0x40004010002000n, 0x48020011000800an, 0xc800c8290000800n, 0x200080420020010n, 0x8100020400080100n, 0x8080008002000100n, 0xe10000c600288100n,
+        0x800080304000n, 0xa00210a004081n, 0xb0080200010008an, 0x8808008001000n, 0x1004808004000800n, 0x92000600508c08n, 0x100400040102d018n, 0x8004e9000a80n,
+        0x21b4228000400082n, 0x41010020804000n, 0x208c110020090040n, 0x2030010020081100n, 0x300808008000400n, 0x9202008080040002n, 0x400804000201b008n, 0x1060020004008041n,
+        0x36846080034000n, 0x208040008020008cn, 0x200080100080n, 0x2088100080080080n, 0x1800808004000an, 0x812040080020080n, 0x8041010400100802n, 0x904a482000c00c3n,
+        0x40204000800080n, 0x40201008400041n, 0xa10040800200020n, 0x380801004800800n, 0x804000800800480n, 0x184800200800400n, 0x1002100104004882n, 0x240186000943n,
+        0x100802040188000n, 0x890004020004000n, 0x4810080400202000n, 0x2c00100008008080n, 0x8000805010010n, 0x200c010002004040n, 0x1001c21011340048n, 0x4084146081020004n,
+        0x102002080410200n, 0xa004088210200n, 0x804200281200n, 0x100008008080n, 0x110a080081040080n, 0x4010002004040n, 0x400c08294a100400n, 0x12441080410a00n,
+        0x608880f1020240a2n, 0x108025004202n, 0xa4c401020000d01n, 0x19000410000821n, 0x4052009120080402n, 0x2000884011002n, 0x20c100104b2080cn, 0xc04104100840022n, 
+    ];
+    
+    private readonly BishopRelevantBits = [
+        6n, 5n, 5n, 5n, 5n, 5n, 5n, 6n, 
+        5n, 5n, 5n, 5n, 5n, 5n, 5n, 5n, 
+        5n, 5n, 7n, 7n, 7n, 7n, 5n, 5n, 
+        5n, 5n, 7n, 9n, 9n, 7n, 5n, 5n, 
+        5n, 5n, 7n, 9n, 9n, 7n, 5n, 5n, 
+        5n, 5n, 7n, 7n, 7n, 7n, 5n, 5n, 
+        5n, 5n, 5n, 5n, 5n, 5n, 5n, 5n, 
+        6n, 5n, 5n, 5n, 5n, 5n, 5n, 6n,
+    ];
+    
+    private readonly RookRelevantBits = [
+        12n, 11n, 11n, 11n, 11n, 11n, 11n, 12n, 
+        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
+        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
+        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
+        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
+        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
+        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
+        12n, 11n, 11n, 11n, 11n, 11n, 11n, 12n,
+    ];
+    
+    /**
+     * Generates a random 64-bit number
+     */
+    Random64() {
+        return crypto.getRandomValues(new BigUint64Array(1))[0];
+    }
+
+    /**
+     * Generates magic numbers for sliding piece attacks
+     * @param type Rook or bishop piece to generate magics for
+     */
+    FindMagics(type: PieceType.Bishop | PieceType.Rook) {
+        const occupancies = new BigUint64Array(4096);
+        const attacks = new BigUint64Array(4096);
+        
+        const bishop = type === PieceType.Bishop;
+
+        for (let square = Square.a8; square <= Square.h1; square++) {
+            let magic = 0n;
+            const mask = bishop ? this.GenerateBishopMasks(square) : this.GenerateRookMasks(square);
+            const shift = bishop ? this.BishopRelevantBits[square] : this.RookRelevantBits[square];
+            const n = Number(this.CountBits(mask));
+
+            for (let index = 0; index < (1 << n); index++) {
+                occupancies[index] = this.SetOccupancy(index, n, mask);
+                attacks[index] = bishop ? this.GenerateBishopAttacksFly(square, occupancies[index]) : this.GenerateRookAttacksFly(square, occupancies[index]);
+            }
+
+            while (true) {
+                magic = BigInt.asUintN(64, this.Random64() & this.Random64() & this.Random64());
+    
+                // skip bad magic numbers
+                if (this.CountBits(BigInt.asUintN(64, (mask * magic)) & 0xFF00000000000000n) < 6) {
+                    continue;
+                }
+
+                const used = new BigUint64Array(4096);
+
+                let failed = false;
+                for (let i = 0; i < (1 << n); i++) {
+                    const index = Number(BigInt.asUintN(64, (occupancies[i] * magic)) >> (64n - shift));
+                    if (used[index] === 0n) {
+                        used[index] = attacks[i];
+                    }
+                    // magic index doesn't work
+                    else if (used[index] !== attacks[i]) {
+                        failed = true;
+                        break;
+                    }
+                }
+                if (!failed) {
+                    console.log(`Square: ${square} magic: 0x${magic.toString(16)}`);
+                    break;
+                }
+            }
+        }
+    }
+
+    /****************************
+     * 
+     *    Bitboard Operations
+     *
+     ****************************/
+
+    /** Set a bit on the square of the board */
+    SetBit(board: bigint, square: Square) {
+        return board |= 1n << this.SquareBigInt[square];
+    }
+
+    /** Remove a bit on the square of the board */
+    RemoveBit(board: bigint, square: Square) {
+        return board &= ~(1n << this.SquareBigInt[square]);
+    }
+
+    /** Get a bit on the square of the board */
+    GetBit(board: bigint, square: Square) {
+        return board & (1n << this.SquareBigInt[square]);
+    }
+
+    /** Count the number of set bits on the board */
+    CountBits(bitboard: bigint) {
+        // // From https://graphics.stanford.edu/~seander/bithacks.html
+        // // This appeared to be the fastest
+        const left32 = Number(bitboard & 0xffffffffn);
+        const right32 = Number(bitboard >> 32n);
+
+        function count32(n: number) {
+            n = n - ((n >> 1) & 0x55555555);
+            n = (n & 0x33333333) + ((n >> 2) & 0x33333333);
+            return ((n + (n >> 4) & 0xF0F0F0F) * 0x1010101) >> 24;
+        }
+
+        return count32(left32) + count32(right32);
+    }
+
+    /** Get the square of the lowest set bit on the board */
+    GetLS1B(bitboard: bigint) {
+        return this.CountBits((bitboard & -bitboard) - 1n);
+    }
+
+    SetOccupancy(index: number, bitsInMask: number, attackMask: bigint) {    
+        let occupancy = 0n;
+    
+        // range of bits within the attack mask
+        for (let count = 0; count < bitsInMask; count++) {
+            const square = this.GetLS1B(attackMask);
+            attackMask = this.RemoveBit(attackMask, square);
+            if (index & (1 << count)) {
+                occupancy |= (1n << this.SquareBigInt[square]);
+            }
+        }
+    
+        return BigInt.asUintN(64, occupancy);
+    }
+
+    /**
+     * Shifts the bitboard one square in the given direction
+     * @returns The shifted bitboard
+     */
+    Shift(board: bigint, direction: Direction) {
+        switch (direction) {
+            case Direction.NORTH: {
+                return board >> 8n;
+            }
+            case Direction.SOUTH: {
+                return board << 8n;
+            }
+            case Direction.EAST: {
+                return (board & this.notHFile) >> 1n;
+            }
+            case Direction.WEST: {
+                return (board & this.notAFile) << 1n;
+            }
+            case Direction.NORTHWEST: {
+                return (board & this.notAFile) >> 9n;
+            }
+            case Direction.NORTHEAST: {
+                return (board & this.notHFile) >> 7n;
+            }
+            case Direction.SOUTHEAST: {
+                return (board & this.notHFile) << 9n;
+            }
+            case Direction.SOUTHWEST: {
+                return (board & this.notAFile) << 7n;
+            }
+        }
+    }
+
+    /****************************
+     * 
+     *       Initialize
+     *
+     ****************************/
     Init() {
         const m1 = -1n;
         const a2a7 = 0x0001010101010100n;
@@ -1205,9 +412,7 @@ class Khepri {
         let btwn, line, rank, file;
         
         for (let square = Square.a8; square <= Square.h1; square++) {
-            // Bitboard masks for single set square
             this.squareBB[square] = this.SetBit(0n, square);
-
             this.rankMasks[square] = 0xffn << (BigInt(square) & 56n);
             this.fileMasks[square] = 0x0101010101010101n << (BigInt(square) & 7n);
             this.isolatedMasks[square] = this.fileMasks[square] << 1n | this.fileMasks[square] >> 1n;
@@ -1217,8 +422,8 @@ class Khepri {
              * Pawn, knight, king attack masks
              *
              * * * * * * * * * * * * * * * * * * * */
-            this.PawnAttacks[Color.White][square] = this.MaskPawnAttacks(Color.White, square);
-            this.PawnAttacks[Color.Black][square] = this.MaskPawnAttacks(Color.Black, square);
+            this.PawnAttacks[square] = this.MaskPawnAttacks(Color.White, square);
+            this.PawnAttacks[square + 64] = this.MaskPawnAttacks(Color.Black, square);
             this.KnightAttacks[square] = this.MaskKnightAttacks(square);
             this.KingAttacks[square] = this.MaskKingAttacks(square);
 
@@ -1256,13 +461,13 @@ class Khepri {
 
             /* * * * * * * * * * * * * * * * * * * * * * * * *
              *
-             * Mask sliding piece attacks on an empty board
+             * Sliding piece attacks on an empty board
              *
              * * * * * * * * * * * * * * * * * * * * * * * * */
-            this.attackRays[Pieces.Bishop - Pieces.Bishop][square] = this.GenerateBishopAttacks(0n, square);
-            this.attackRays[Pieces.Queen - Pieces.Bishop][square] |= this.attackRays[Pieces.Bishop - Pieces.Bishop][square];
-            this.attackRays[Pieces.Rook - Pieces.Bishop][square] = this.GenerateRookAttacks(0n, square);
-            this.attackRays[Pieces.Queen - Pieces.Bishop][square] |= this.attackRays[Pieces.Rook - Pieces.Bishop][square];
+            this.attackRays[PieceType.Bishop - PieceType.Bishop][square] = this.GenerateBishopAttacks(0n, square);
+            this.attackRays[PieceType.Queen - PieceType.Bishop][square] |= this.attackRays[PieceType.Bishop - PieceType.Bishop][square];
+            this.attackRays[PieceType.Rook - PieceType.Bishop][square] = this.GenerateRookAttacks(0n, square);
+            this.attackRays[PieceType.Queen - PieceType.Bishop][square] |= this.attackRays[PieceType.Rook - PieceType.Bishop][square];
 
             /* * * * * * * * * * * * *
              *
@@ -1312,7 +517,69 @@ class Khepri {
             }
         }
     }
-    
+
+    InitHashes() {
+        // Init piece keys
+        for (let piece = PieceType.Pawn; piece <= PieceType.King; piece++) {
+            for (let square = Square.a8; square <= Square.h1; square++) {
+                this.Zobrist.Pieces[Color.White][piece][square] = this.Random64();
+                this.Zobrist.Pieces[Color.Black][piece][square] = this.Random64();
+            }
+        }
+
+        // Init en passant square keys
+        for (let square = Square.a8; square <= Square.h1; square++) {
+            this.Zobrist.EnPassant[square] = this.Random64();
+        }
+
+        // Init castling keys
+        for (let i = 0; i < 16; i++) {
+            this.Zobrist.Castle[i] = this.Random64();
+        }
+
+        // Init side to move key
+        this.Zobrist.SideToMove = this.Random64();
+    }
+
+    GenerateHashes() {
+        let hash = 0n;
+        let pawnHash = 0n;
+
+        // Add the hashes of individual pieces
+        for (let square = Square.a8; square <= Square.h1; square++) {
+            const piece = this.BoardState.Squares[square];
+
+            if (piece) {
+                hash ^= this.Zobrist.Pieces[piece.Color][piece.Type][square];
+
+                if (piece.Type === PieceType.Pawn) {
+                    pawnHash ^= this.Zobrist.Pieces[piece.Color][PieceType.Pawn][square];
+                }
+            }
+        }
+
+        // Add the en passant hash
+        if (this.BoardState.EnPassSq !== Square.no_sq) {
+            hash ^= this.Zobrist.EnPassant[this.BoardState.EnPassSq];
+        }
+
+        // Add the castling hash
+        hash ^= this.Zobrist.Castle[this.BoardState.CastlingRights];
+
+        // Add the side to move hash
+        if (this.BoardState.SideToMove === Color.Black) {
+            hash ^= this.Zobrist.SideToMove;
+        }
+
+        return { hash, pawnHash };
+    }
+
+    /****************************
+     * 
+     *       Attack masks
+     *
+     ****************************/
+
     /**
      * Generate pawn attack masks
      */
@@ -1359,7 +626,30 @@ class Khepri {
         // Clamp the value to 64-bits, otherwise it might go larger
         return BigInt.asUintN(64, attacks);
     }
+
+    /**
+     * Generate king attack masks
+     * @param square King square to generate attacks from
+     */
+    MaskKingAttacks(square: Square) {
+        let attacks = 0n;
+        let bitboard = 0n;
     
+        bitboard = this.SetBit(bitboard, square);
+    
+        if (bitboard >> 8n) attacks |= (bitboard >> 8n);
+        if ((bitboard >> 9n) & this.notHFile) attacks |= (bitboard >> 9n);
+        if ((bitboard >> 7n) & this.notAFile) attacks |= (bitboard >> 7n);
+        if ((bitboard >> 1n) & this.notHFile) attacks |= (bitboard >> 1n);
+        if (bitboard << 8n) attacks |= (bitboard << 8n);
+        if ((bitboard << 9n) & this.notAFile) attacks |= (bitboard << 9n);
+        if ((bitboard << 7n) & this.notHFile) attacks |= (bitboard << 7n);
+        if ((bitboard << 1n) & this.notAFile) attacks |= (bitboard << 1n);
+    
+        // Clamp the value to 64-bits, otherwise it might go larger
+        return BigInt.asUintN(64, attacks);
+    }
+
     GenerateBishopMasks(square: Square) {
         let attacks = 0n;
     
@@ -1385,7 +675,7 @@ class Khepri {
     
         return BigInt.asUintN(64, attacks);
     }
-    
+
     GenerateBishopAttacksFly(square: Square, block: bigint) {
         let attacks = 0n;
     
@@ -1414,7 +704,7 @@ class Khepri {
     
         return BigInt.asUintN(64, attacks);
     }
-    
+
     GenerateRookMasks(square: Square) {
         let attacks = 0n;
     
@@ -1440,7 +730,7 @@ class Khepri {
     
         return BigInt.asUintN(64, attacks);
     }
-    
+
     GenerateRookAttacksFly(square: Square, block: bigint) {
         let attacks = 0n;
     
@@ -1470,1524 +760,845 @@ class Khepri {
     
         return BigInt.asUintN(64, attacks);
     }
-    
-    /**
-     * Generate king attack masks
-     * @param square King square to generate attacks from
-     */
-    MaskKingAttacks(square: Square) {
-        let attacks = 0n;
-        let bitboard = 0n;
-    
-        bitboard = this.SetBit(bitboard, square);
-    
-        if (bitboard >> 8n) attacks |= (bitboard >> 8n);
-        if ((bitboard >> 9n) & this.notHFile) attacks |= (bitboard >> 9n);
-        if ((bitboard >> 7n) & this.notAFile) attacks |= (bitboard >> 7n);
-        if ((bitboard >> 1n) & this.notHFile) attacks |= (bitboard >> 1n);
-        if (bitboard << 8n) attacks |= (bitboard << 8n);
-        if ((bitboard << 9n) & this.notAFile) attacks |= (bitboard << 9n);
-        if ((bitboard << 7n) & this.notHFile) attacks |= (bitboard << 7n);
-        if ((bitboard << 1n) & this.notAFile) attacks |= (bitboard << 1n);
-    
-        // Clamp the value to 64-bits, otherwise it might go larger
-        return BigInt.asUintN(64, attacks);
+
+    /****************************
+     * 
+     *     Move Generation
+     *
+     ****************************/
+
+    EncodeMove(from: Square, to: Square, type: MoveType, promotionType = PromotionType.Knight) {
+        return from | (to << 6) | (type << 12) | (promotionType << 14);
     }
-    
-    SetOccupancy(index: number, bitsInMask: number, attackMask: bigint) {    
-        let occupancy = 0n;
-    
-        // range of bits within the attack mask
-        for (let count = 0; count < bitsInMask; count++) {
-            const square = this.GetLS1B(attackMask);
-            attackMask = this.RemoveBit(attackMask, square);
-            if (index & (1 << count)) {
-                occupancy |= (1n << this.SquareBigInt[square]);
-            }
+
+    EncodeMoveQuiet(from: Square, to: Square) {
+        return from | (to << 6);
+    }
+
+    GenerateBishopAttacks(occupancy: bigint, square: Square) {
+        occupancy = BigInt.asUintN(64, (occupancy & this.BishopMasks[square]) * this.BishopMagicNumbers[square]);
+        occupancy >>= 64n - this.BishopRelevantBits[square];
+
+        return this.BishopAttacks[square][Number(occupancy)];
+    }
+
+    GenerateRookAttacks(occupancy: bigint, square: Square) {
+        occupancy = BigInt.asUintN(64, (occupancy & this.RookMasks[square]) * this.RookMagicNumbers[square]);
+        occupancy >>= 64n - this.RookRelevantBits[square];
+
+        return this.RookAttacks[square][Number(occupancy)];
+    }
+
+    /**
+     * Generate pawn moves. Pawns have a number of special rules (like double push, en passant, promotions) so
+     * their moves are generated separately from the main move function.
+     */
+    GeneratePawnMoves(capturesOnly = false) {
+        const moves: number[] = [];
+        
+        // Define directions, depending on color to move
+        const side = this.BoardState.SideToMove;
+        const pawns = this.BoardState.PiecesBB[PieceType.Pawn + (6 * side)];
+        const empty = ~(this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black]);
+        const enemy = this.BoardState.OccupanciesBB[side ^ 1];
+        let doublePushRank = this.rankMasks[Square.a3];
+        let up = Direction.NORTH;
+        let upLeft = Direction.NORTHWEST;
+        let upRight = Direction.NORTHEAST;
+        let notRank8 = ~this.rankMasks[Square.a8];
+
+        if (side === Color.Black) {
+            doublePushRank = this.rankMasks[Square.a6];
+            up = Direction.SOUTH;
+            upLeft = Direction.SOUTHEAST;
+            upRight = Direction.SOUTHWEST;
+            notRank8 = ~this.rankMasks[Square.a1];
         }
-    
-        return BigInt.asUintN(64, occupancy);
-    }
 
-    /***************************
-     * 
-     * Hashing
-     * 
-     **************************/
+        if (!capturesOnly) {
+            // generates a bitboard of all the target squares that pawns can push to
+            let push = this.Shift(pawns, up) & empty & notRank8;
+            let doublePush = this.Shift(push & doublePushRank, up) & empty;
 
-    private PRNG_SEED = 1n;
+            while (push) {
+                const toSquare = this.GetLS1B(push);
+                push = this.RemoveBit(push, toSquare);
+                moves.push(this.EncodeMoveQuiet(toSquare + up, toSquare));
+            }
 
-    private readonly Zobrist: Zobrist = {
-        Pieces: Array.from(Array(2), () => Array.from(Array(6), () => new Array(64))),
-        EnPassant: [],
-        Castle: [],
-        SideToMove: 0n,
-    }
-
-    /**
-     * Generates a random 64-bit number
-     * https://github.com/official-stockfish/Stockfish/blob/master/src/misc.h#L171
-     */
-    Random64() {
-        let seed = this.PRNG_SEED;
-
-        seed ^= seed >> 12n;
-        seed ^= seed << 25n;
-        seed ^= seed >> 27n;
-
-        this.PRNG_SEED = seed;
-
-        // Must clamp the value at 64-bits, otherwise it will go larger
-        return BigInt.asUintN(64, seed * 2685821657736338717n);
-    }
-
-    InitHashes() {
-        // Init piece keys
-        for (let piece = Pieces.Pawn; piece <= Pieces.King; piece++) {
-            for (let square = Square.a8; square <= Square.h1; square++) {
-                this.Zobrist.Pieces[Color.White][piece][square] = this.Random64();
-                this.Zobrist.Pieces[Color.Black][piece][square] = this.Random64();
+            while (doublePush) {
+                const toSquare = this.GetLS1B(doublePush);
+                doublePush = this.RemoveBit(doublePush, toSquare);
+                moves.push(this.EncodeMoveQuiet(toSquare + (2 * up), toSquare));
             }
         }
 
-        // Init en passant square keys
-        for (let square = Square.a8; square <= Square.h1; square++) {
-            this.Zobrist.EnPassant[square] = this.Random64();
+        // pawn captures
+        let rightAttacks = this.Shift(pawns, upRight) & enemy;
+        let leftAttacks = this.Shift(pawns, upLeft) & enemy;
+
+        while (rightAttacks) {
+            const toSquare = this.GetLS1B(rightAttacks);
+            rightAttacks = this.RemoveBit(rightAttacks, toSquare);
+
+            // attacks to promotion
+            if ((side === Color.White && (toSquare <= Square.h8)) || (side === Color.Black && (toSquare >= Square.a1))) {
+                moves.push(
+                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.Promotion, PromotionType.Knight),
+                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.Promotion, PromotionType.Bishop),
+                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.Promotion, PromotionType.Rook),
+                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.Promotion, PromotionType.Queen),
+                );
+            }
+            else {
+                // regular attacks
+                moves.push(this.EncodeMove(toSquare + upRight, toSquare, MoveType.Capture));
+            }
         }
 
-        // Init castling keys
-        for (let i = 0; i < 16; i++) {
-            this.Zobrist.Castle[i] = this.Random64();
+        while (leftAttacks) {
+            const toSquare = this.GetLS1B(leftAttacks);
+            leftAttacks = this.RemoveBit(leftAttacks, toSquare);
+
+            // attacks to promotion
+            if ((side === Color.White && (toSquare <= Square.h8)) || (side === Color.Black && (toSquare >= Square.a1))) {
+                moves.push(
+                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.Promotion, PromotionType.Knight),
+                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.Promotion, PromotionType.Bishop),
+                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.Promotion, PromotionType.Rook),
+                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.Promotion, PromotionType.Queen),
+                );
+            }
+            else {
+                // regular attacks
+                moves.push(this.EncodeMove(toSquare + upLeft, toSquare, MoveType.Capture));
+            }
         }
 
-        // Init side to move key
-        this.Zobrist.SideToMove = this.Random64();
+        // promotions (not attacks)
+        let promotions = this.Shift(pawns, up) & empty & ~notRank8;
+        while (promotions) {
+            const toSquare = this.GetLS1B(promotions);
+            promotions = this.RemoveBit(promotions, toSquare);
+
+            moves.push(
+                this.EncodeMove(toSquare + up, toSquare, MoveType.Promotion, PromotionType.Knight),
+                this.EncodeMove(toSquare + up, toSquare, MoveType.Promotion, PromotionType.Bishop),
+                this.EncodeMove(toSquare + up, toSquare, MoveType.Promotion, PromotionType.Rook),
+                this.EncodeMove(toSquare + up, toSquare, MoveType.Promotion, PromotionType.Queen),
+            );
+        }
+
+        // en passant capture
+        // check if the en passant square is set and if there are any pawns that could capture
+        if (this.BoardState.EnPassSq !== Square.no_sq && (this.PawnAttacks[this.BoardState.EnPassSq + (64 * (this.BoardState.SideToMove ^ 1))] & pawns)) {
+            let right = this.Shift(pawns, upRight) & this.squareBB[this.BoardState.EnPassSq];
+            let left = this.Shift(pawns, upLeft) & this.squareBB[this.BoardState.EnPassSq];
+
+            while (right) {
+                const toSquare = this.GetLS1B(right);
+                right = this.RemoveBit(right, toSquare);
+
+                moves.push(this.EncodeMove(toSquare + upRight, toSquare, MoveType.EnPassant));
+            }
+
+            while (left) {
+                const toSquare = this.GetLS1B(left);
+                left = this.RemoveBit(left, toSquare);
+
+                moves.push(this.EncodeMove(toSquare + upLeft, toSquare, MoveType.EnPassant));
+            }
+        }
+
+        return moves;
     }
 
     /**
-     * Generate hashes for the current position
+     * Generate all pseudo-legal moves for the current player to move. Moves obey piece movement rules, but might leave the king in check
+     * so further validation should be done.
+     * @param capturesOnly Should only captures be generated
+     * @returns A list of all pseudo-legal moves
      */
-    GenerateHashes() {
-        let hash = 0n;
-        let pawnHash = 0n;
+    GenerateMoves(capturesOnly = false) {
+        const moveList: number[] = [];
+        const opponent = this.BoardState.OccupanciesBB[this.BoardState.SideToMove ^ 1];
+        const occupied = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
+        const empty = ~occupied;
+        let pieces = this.BoardState.OccupanciesBB[this.BoardState.SideToMove] & ~this.BoardState.PiecesBB[PieceType.Pawn + (6 * this.BoardState.SideToMove)];
 
-        // Add the hashes of individual pieces
-        for (let square = Square.a8; square <= Square.h1; square++) {
-            const piece = this.Position.Squares[square];
+        // generate pawns (done separately because they have many unique moves)
+        moveList.push(...this.GeneratePawnMoves());
 
-            if (piece) {
-                hash ^= this.Zobrist.Pieces[piece.Color][piece.Type][square];
+        // Iterate through all non-pawn pieces
+        while (pieces) {
+            const square = this.GetLS1B(pieces);
+            pieces = this.RemoveBit(pieces, square);
+            const pieceType = (this.BoardState.Squares[square] as Piece).Type;
+            let moves: bigint = 0n;
 
-                if (piece.Type === Pieces.Pawn) {
-                    pawnHash ^= this.Zobrist.Pieces[piece.Color][Pieces.Pawn][square];
+            switch (pieceType) {
+                case PieceType.Knight: {
+                    moves = this.KnightAttacks[square];
+                    break;
+                }
+                case PieceType.Bishop: {
+                    moves = this.GenerateBishopAttacks(occupied, square);
+                    break;
+                }
+                case PieceType.Rook: {
+                    moves = this.GenerateRookAttacks(occupied, square);
+                    break;
+                }
+                case PieceType.Queen: {
+                    moves = this.GenerateBishopAttacks(occupied, square) | this.GenerateRookAttacks(occupied, square);
+                    break;
+                }
+                case PieceType.King: {
+                    moves = this.KingAttacks[square];
+                    break;
+                }
+                default: {
+                    // If this ever gets hit, there's a serious issue
+                    throw new Error("Invalid piece in move gen.");
                 }
             }
-        }
 
-        // Add the en passant hash
-        if (this.Position.EnPassSq !== Square.no_sq) {
-            hash ^= this.Zobrist.EnPassant[this.Position.EnPassSq];
-        }
+            if (!capturesOnly) {
+                let quietMoves = moves & empty;
 
-        // Add the castling hash
-        hash ^= this.Zobrist.Castle[this.Position.CastlingRights];
-
-        // Add the side to move hash
-        if (this.Position.SideToMove === Color.Black) {
-            hash ^= this.Zobrist.SideToMove;
-        }
-
-        return { hash, pawnHash };
-    }
-
-    /***************************
-     * 
-     * Transposition Tables
-     * 
-     **************************/
-
-    private readonly HashNoMove = 50000;
-    private readonly TranspositionTables: TTable = {
-        Entries: [],
-        Size: 0n,
-    }
-    private readonly PawnHashTable: PawnHashTable = {
-        Entries: [],
-        Size: 0n,
-    }
-
-    /**
-     * Initialize the hash table size
-     * @param size Hash table size in MB
-     */
-    SetTransTableSize(size = 32) {
-        this.TranspositionTables.Size = BigInt((size * 1024 * 1024) / 16); // sets the size in bytes
-
-        this.TranspositionTables.Entries.length = 0;
-
-        this.PawnHashTable.Size = BigInt((1 * 1024 * 1024) / 16); // 1 MB
-        this.PawnHashTable.Entries.length = 0;
-    }
-
-    /**
-     * Stores an entry in the transposition table
-     * @param hash 
-     * @param depth 
-     * @param flag 
-     * @param score 
-     * @param move 
-     * @param ply 
-     */
-    WriteTT(depth: number, flag: HashFlag, score: number, move: Move) {
-        const index = Number(this.Position.Hash % this.TranspositionTables.Size);
-
-        if (score > this.Checkmate) {
-            score += this.Position.Ply;
-        }
-
-        if (score < -this.Checkmate) {
-            score -= this.Position.Ply;
-        }
-
-        this.TranspositionTables.Entries[index] = {
-            BestMove: move,
-            Depth: depth,
-            Flag: flag,
-            Hash: this.Position.Hash,
-            Score: score,
-        };
-    }
-
-    /**
-     * 
-     * @param hash 
-     * @param depth 
-     * @param ply 
-     * @param alpha 
-     * @param beta 
-     * @returns 
-     */
-    ProbeTT(depth: number, alpha: number, beta: number) {
-        const entry = this.TranspositionTables.Entries[Number(this.Position.Hash % this.TranspositionTables.Size)];
-
-        let newScore = this.HashNoMove;
-
-        if (!entry || entry.Hash !== this.Position.Hash) {
-            return { ttScore: newScore, ttMove: 0 };
-        }
-
-        if (entry.Depth >= depth) {
-            let score = entry.Score;
-
-            if (score > this.Checkmate) {
-                score -= this.Position.Ply;
+                while (quietMoves) {
+                    const toSquare = this.GetLS1B(quietMoves);
+                    quietMoves = this.RemoveBit(quietMoves, toSquare);
+                    moveList.push(this.EncodeMoveQuiet(square, toSquare));
+                }
             }
-
-            if (score < -this.Checkmate) {
-                score += this.Position.Ply;
-            }
-
-            if (entry.Flag === HashFlag.Exact) {
-                newScore = score;
-            }
-
-            if (entry.Flag === HashFlag.Alpha && score <= alpha) {
-                newScore = score;
-            }
-
-            if (entry.Flag === HashFlag.Beta && score >= beta) {
-                newScore = score;
-            }
-        }
-
-        return { ttScore: newScore, ttMove: entry.BestMove };
-    }
-
-    /***************************
-     * 
-     * Tables
-     * 
-     **************************/
-
-    readonly PawnAttacks: bigint[][] = Array.from(Array(2), () => new Array(64));
-    readonly KnightAttacks: bigint[] = [];
-    readonly KingAttacks: bigint[] = [];
-    private readonly BishopMasks: bigint[] = Array(64);
-    private readonly BishopAttacks: bigint[][] = Array.from(Array(64), () => new Array(512));
-    private readonly RookMasks: bigint[] = Array(64);
-    private readonly RookAttacks: bigint[][] = Array.from(Array(64), () => new Array(4096));
     
-    private readonly BishopMagicNumbers = [ 0x40040844404084n, 0x2004208a004208n, 0x10190041080202n, 0x108060845042010n, 0x581104180800210n, 0x2112080446200010n, 0x1080820820060210n,
-        0x3c0808410220200n, 0x4050404440404n, 0x21001420088n, 0x24d0080801082102n, 0x1020a0a020400n, 0x40308200402n, 0x4011002100800n, 0x401484104104005n, 0x801010402020200n,
-        0x400210c3880100n, 0x404022024108200n, 0x810018200204102n, 0x4002801a02003n, 0x85040820080400n, 0x810102c808880400n, 0xe900410884800n, 0x8002020480840102n, 0x220200865090201n,
-        0x2010100a02021202n, 0x152048408022401n, 0x20080002081110n, 0x4001001021004000n, 0x800040400a011002n, 0xe4004081011002n, 0x1c004001012080n, 0x8004200962a00220n,
-        0x8422100208500202n, 0x2000402200300c08n, 0x8646020080080080n, 0x80020a0200100808n, 0x2010004880111000n, 0x623000a080011400n, 0x42008c0340209202n, 0x209188240001000n,
-        0x400408a884001800n, 0x110400a6080400n, 0x1840060a44020800n, 0x90080104000041n, 0x201011000808101n, 0x1a2208080504f080n, 0x8012020600211212n, 0x500861011240000n,
-        0x180806108200800n, 0x4000020e01040044n, 0x300000261044000an, 0x802241102020002n, 0x20906061210001n, 0x5a84841004010310n, 0x4010801011c04n, 0xa010109502200n, 0x4a02012000n,
-        0x500201010098b028n, 0x8040002811040900n, 0x28000010020204n, 0x6000020202d0240n, 0x8918844842082200n, 0x4010011029020020n
-    ];
-    
-    private readonly RookMagicNumbers = [ 0x8a80104000800020n, 0x140002000100040n, 0x2801880a0017001n, 0x100081001000420n, 0x200020010080420n, 0x3001c0002010008n, 0x8480008002000100n,
-        0x2080088004402900n, 0x800098204000n, 0x2024401000200040n, 0x100802000801000n, 0x120800800801000n, 0x208808088000400n, 0x2802200800400n, 0x2200800100020080n, 0x801000060821100n,
-        0x80044006422000n, 0x100808020004000n, 0x12108a0010204200n, 0x140848010000802n, 0x481828014002800n, 0x8094004002004100n, 0x4010040010010802n, 0x20008806104n, 0x100400080208000n,
-        0x2040002120081000n, 0x21200680100081n, 0x20100080080080n, 0x2000a00200410n, 0x20080800400n, 0x80088400100102n, 0x80004600042881n, 0x4040008040800020n, 0x440003000200801n,
-        0x4200011004500n, 0x188020010100100n, 0x14800401802800n, 0x2080040080800200n, 0x124080204001001n, 0x200046502000484n, 0x480400080088020n, 0x1000422010034000n, 0x30200100110040n,
-        0x100021010009n, 0x2002080100110004n, 0x202008004008002n, 0x20020004010100n, 0x2048440040820001n, 0x101002200408200n, 0x40802000401080n, 0x4008142004410100n, 0x2060820c0120200n,
-        0x1001004080100n, 0x20c020080040080n, 0x2935610830022400n, 0x44440041009200n, 0x280001040802101n, 0x2100190040002085n, 0x80c0084100102001n, 0x4024081001000421n,
-        0x20030a0244872n, 0x12001008414402n, 0x2006104900a0804n, 0x1004081002402n
-    ];
-    
-    private readonly BishopRelevantBits = [
-        6n, 5n, 5n, 5n, 5n, 5n, 5n, 6n, 
-        5n, 5n, 5n, 5n, 5n, 5n, 5n, 5n, 
-        5n, 5n, 7n, 7n, 7n, 7n, 5n, 5n, 
-        5n, 5n, 7n, 9n, 9n, 7n, 5n, 5n, 
-        5n, 5n, 7n, 9n, 9n, 7n, 5n, 5n, 
-        5n, 5n, 7n, 7n, 7n, 7n, 5n, 5n, 
-        5n, 5n, 5n, 5n, 5n, 5n, 5n, 5n, 
-        6n, 5n, 5n, 5n, 5n, 5n, 5n, 6n,
-    ];
-    
-    private readonly RookRelevantBits = [
-        12n, 11n, 11n, 11n, 11n, 11n, 11n, 12n, 
-        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
-        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
-        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
-        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
-        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
-        11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
-        12n, 11n, 11n, 11n, 11n, 11n, 11n, 12n,
-    ];
-
-    /***************************
-     * 
-     * Evaluation
-     * 
-     **************************/
-
-    readonly MGPieceValue = [80, 321, 328, 447, 912, 15000];
-    readonly EGPieceValue = [102, 256, 271, 472, 911, 15000];
-
-    readonly PST = [
-        // opening/middle game values
-        [
-            // pawn
-            [
-                  0,   0,   0,   0,   0,  0,  0,   0,
-                 24,  24,  16,  16,   9, 10,  7,   6,
-                  0,  11,  12,   8,  13, 21, 10,  -6,
-                -23,   4,  -5,  12,  16,  3,  5, -26,
-                -28, -13,  -6,   3,   6,  0,  0, -30,
-                -24, -13,  -9, -10,   0, -2, 21, -15,
-                -28,  -8, -25, -17, -12, 11, 28, -21,
-                  0,   0,   0,   0,   0,  0,  0,   0,
-            ],
+            let captures = moves & opponent;
             
-            // knight
-            [
-                -11,  -2,  -1,  -1,  1, -4, -1, -5,
-                 -9,  -4,   5,   4,  2,  4,  0, -2,
-                 -6,   9,   3,  11, 14, 13, 12,  5,
-                  2,   0,  -1,  18,  6, 20,  9, 18,
-                  0,  -1,  -3, -10,  3, -3,  8,  8,
-                -10, -14, -10,  -5,  6, -2,  4, -6,
-                 -5,  -5, -19,  -1, -3,  0, -1,  4,
-                 -5,  -2,  -6,  -5,  0,  3, -2, -3,
-            ],
-
-            // bishop
-            [
-                 -4,  0, -4, -2, -1, -1, -1,  -1,
-                 -8, -3, -6, -4,  2,  1, -2, -13,
-                -10,  0,  3,  5,  4, 11,  5,   4,
-                 -8, -5,  2, 16,  7, 10, -1,  -3,
-                  0,  3, -4,  7, 13, -9, -5,   8,
-                 -1, 11,  4, -2, -1,  5,  7,   1,
-                  6,  7,  8, -4,  0,  9, 22,  -1,
-                -11,  1, -1, -4,  2, -5, -3,  -6,
-            ],
-
-            // rook
-            [
-                  4,   4,   3,  6,  6,  2,   3,   4,
-                  3,   3,  10,  9,  9,  8,   4,   5,
-                 -4,   6,   2,  8,  1,  7,   6,   2,
-                 -8,  -6,   1, -1,  3,  8,  -1,   1,
-                -17,  -9,  -9, -6, -5, -7,   1, -12,
-                -22, -14, -12, -9, -6, -4,  -2, -12,
-                -23, -11, -12, -5, -2,  1,  -1, -30,
-                 -3,  -7,  -4,  4,  9, 12, -20,  -3,
-            ],
-
-            // queen
-            [
-                 -5,   2,  4,  2,  6,   3,  3,  5,
-                -13, -23,  2,  6,  4,  10,  5, 12,
-                 -7,  -6, -2,  3, 12,  16, 17, 22,
-                -10, -11, -5, -5,  7,   6,  9, 14,
-                 -5, -13, -9, -8, -1,   3,  8,  5,
-                 -9,  -5, -2, -5, -5,   5,  2,  4,
-                -14,  -8,  3,  7,  8,   6, -7,  2,
-                 -6, -10, -4, 13, -3, -13, -5, -6,
-            ],
-
-            // king
-            [
-                 -1,  0,  0,   0,   0,   0,  1,   0,
-                  0,  2,  1,   2,   2,   2,  1,   0,
-                  1,  3,  3,   3,   2,   6,  5,   1,
-                  0,  2,  4,   3,   3,   4,  3,  -3,
-                 -3,  1,  3,   1,   1,   0, -3,  -9,
-                 -2,  0,  1,  -3,  -2,  -6, -2, -11,
-                 -2, -1, -3, -25, -25, -13, 13,  14,
-                -14, 14, 10, -29,   7, -27, 30,   9,
-            ]
-        ],
-        // end game values
-        [
-            // pawn
-            [
-                  0,  0,   0,   0,   0,   0,   0,   0,
-                 50, 47,  35,  28,  25,  25,  31,  39,
-                 35, 32,  22,   5,   2,   9,  22,  21,
-                  8,  0, -11, -27, -27, -21,  -8, -10,
-                 -4, -4, -19, -26, -26, -24, -17, -19,
-                -14, -9, -19, -17, -18, -19, -24, -26,
-                 -7, -9,  -5, -11,  -8, -18, -22, -26,
-                  0,  0,   0,   0,   0,   0,   0,   0,
-            ],
-
-            // knight
-            [
-                -10,  -3,   0, -3,  1,  -6, -4, -7,
-                 -5,   3,  -3,  6,  1,  -4, -2, -5,
-                 -5,  -2,   2,  1,  1,   1,  1, -3,
-                  1,   7,   7,  5,  7,   5,  8,  5,
-                 -1,   0,   2,  9,  3,   3,  6, -1,
-                 -3,  -3, -11,  2, -4, -17, -4, -2,
-                 -3,  -2,  -7, -5,  1,  -7,  0, -2,
-                 -5, -13,  -4,  0, -2,  -4, -9, -4,
-            ],
-
-            // bishop
-            [
-                -4,  -2, -4, -2, -1, -2, -2, -3,
-                -3,  -1,  0, -7,  0, -3, -4, -7,
-                 1,  -1,  0,  0,  0,  3,  1,  2,
-                -2,   4,  4, 11,  5,  4, -1,  1,
-                -1,  -2,  7,  9,  2,  3, -3, -1,
-                 1,   0,  2,  5,  6, -3, -1,  1,
-                -3, -11, -7, -1,  1, -5, -7, -4,
-                -9,  -1, -6, -2, -2, -4, -4, -5,
-            ],
-
-            // rook
-            [
-                 11,  9, 11, 13,  11,   7,  9,   7,
-                 12, 13, 14, 13,   9,   7,  8,   8,
-                  5,  7,  5,  5,   0,   1,  2,  -2,
-                 -2,  0,  5, -2,  -1,   2, -2,   0,
-                 -1, -2,  1, -4,  -6,  -8, -6,  -8,
-                 -8, -5, -9, -7, -11, -13, -6, -10,
-                 -7, -7, -5, -6,  -9,  -9, -7,  -8,
-                -10, -3,  0, -7, -12, -13, -3, -21,
-            ],
-
-            // queen
-            [
-                -5,  2,   4,   3,  6,  4,  2,  4,
-                -8, -5,   4,   7,  7,  7,  3,  4,
-                -5, -3,   0,   7, 11, 11,  7,  9,
-                -6, -1,   1,   8, 12,  6,  9,  8,
-                -7, -2,   3,  13,  8,  6,  6,  4,
-                -5, -8,   1,  -3,  0,  1,  3,  2,
-                -7, -7, -14, -11, -9, -5, -6, -1,
-                -6, -8,  -7, -17, -5, -9, -4, -5,
-            ],
-
-            // king
-            [
-                 -3,  -2,  -2,  -1,   0,   1,   2,  -2,
-                 -2,   6,   6,   6,   6,  12,   7,   0,
-                  1,  12,  14,  12,  11,  23,  21,   3,
-                 -4,   9,  18,  23,  17,  21,  14,  -5,
-                -11,  -4,  14,  20,  19,  15,   2, -18,
-                -13,  -5,   7,  14,  15,   9,   0, -16,
-                -16,  -9,   2,   6,  10,   3, -11, -25,
-                -22, -25, -16, -15, -25, -12, -35, -44,
-            ]
-        ]
-    ];
-
-    private readonly PhaseValues = [0, 1, 1, 2, 4, 0];
-    readonly MGdoubledPenalty = 3;
-    readonly EGdoubledPenalty = 10;
-    readonly MGisolatedPenalty = 16;
-    readonly EGisolatedPenalty = 4;
-    readonly MGfileSemiOpenScore = 17;
-    readonly MGfileOpenScore = 34;
-    readonly MGpassedBonus = [0, 1, -4, -7, 11, 37, 55, 0];
-    readonly EGpassedBonus = [0, -9, -3, 17, 35, 53, 67, 0];
-    readonly MGrookQueenFileBonus = 11;
-    readonly MGKnightOutpostBonus = 23;
-    readonly EGKnightOutpostBonus = 14;
-    readonly MGBishopOutpostBonus = 21;
-    readonly EGBishopOutpostBonus = 0;
-    readonly MGCorneredBishopPenalty = 25;
-    readonly EGCorneredBishopPenalty = 40;
-    readonly MGKingSemiOpenPenalty = 6;
-    readonly MGBishopPairBonus = 25;
-    readonly EGBishopPairBonus = 30;
-
-    readonly MGKnightMobility = [0,0,-23,-11,-9,0,15,0,24];
-    readonly MGBishopMobility = [0,-2,-28,-15,-8,0,5,13,17,18,21,23,11,8];
-    readonly MGRookMobility = [0,0,-31,-25,-22,-17,-14,-12,-11,-8,-1,2,10,17,16];
-    readonly MGQueenMobility = [0,0,0,0,-1,-5,-10,-11,-13,-9,-8,-8,-5,-3,-2,0,4,5,6,6,9,11,12,12,10,7,2,2];
-    readonly EGKnightMobility = [0,0,-25,-32,-18,0,-6,0,11];
-    readonly EGBishopMobility = [0,-1,-28,-29,-21,-16,-6,-1,6,8,11,10,11,10];
-    readonly EGRookMobility = [0,0,-26,-29,-19,-13,-6,-2,4,6,7,10,9,11,8];
-    readonly EGQueenMobility = [0,0,0,0,0,-1,-2,-3,-7,-8,-13,-13,-16,-15,-8,-4,-3,4,9,9,15,11,16,16,11,9,3,2];
-
-    readonly PhaseTotal = (this.PhaseValues[Pieces.Knight] * 4) + (this.PhaseValues[Pieces.Bishop] * 4) + (this.PhaseValues[Pieces.Rook] * 4) + (this.PhaseValues[Pieces.Queen] * 2);
-
-    readonly KingSquares = [0, 0];
-
-    Evaluate() {
-        let mgScores = [0, 0];
-        let egScores = [0, 0];
-        let phase = this.Position.Phase;
-        const bishopCount = [0, 0];
-        const allOccupancies = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-
-        let board = allOccupancies & ~(this.Position.PiecesBB[Color.White][Pieces.Pawn] | this.Position.PiecesBB[Color.Black][Pieces.Pawn]);
-
-        const pawnHash = this.PawnHashTable.Entries[Number(this.Position.PawnHash % this.PawnHashTable.Size)];
-
-        if (pawnHash && pawnHash.hash === this.Position.PawnHash) {
-            mgScores[Color.White] += pawnHash.wScore.mg;
-            egScores[Color.White] += pawnHash.wScore.eg;
-            mgScores[Color.Black] += pawnHash.bScore.mg;
-            egScores[Color.Black] += pawnHash.bScore.eg;
-        }
-        else {
-            const pawnEval = this.EvaluatePawns();
-
-            mgScores[Color.White] += pawnEval.mgScores[Color.White];
-            egScores[Color.White] += pawnEval.egScores[Color.White];
-            mgScores[Color.Black] += pawnEval.mgScores[Color.Black];
-            egScores[Color.Black] += pawnEval.egScores[Color.Black];
-
-            this.PawnHashTable.Entries[Number(this.Position.PawnHash % this.PawnHashTable.Size)] = {
-                hash: this.Position.PawnHash,
-                wScore: {
-                    mg: pawnEval.mgScores[Color.White],
-                    eg: pawnEval.egScores[Color.White],
-                },
-                bScore: {
-                    mg: pawnEval.mgScores[Color.Black],
-                    eg: pawnEval.egScores[Color.Black],
-                },
+            while (captures) {
+                const toSquare = this.GetLS1B(captures);
+                captures = this.RemoveBit(captures, toSquare);
+                moveList.push(this.EncodeMove(square, toSquare, MoveType.Capture));
             }
         }
 
-        const outpostRanks = [this.rankMasks[Square.a4] | this.rankMasks[Square.a5] | this.rankMasks[Square.a6], this.rankMasks[Square.a3] | this.rankMasks[Square.a4] | this.rankMasks[Square.a5]];
+        // castling moves - a bit complicated due to chess960, where the king and rook squares can vary
+        if (!capturesOnly) {
+            const kingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)]);
 
-        while (board) {
-            let square = this.GetLS1B(board);
-            let actualSquare = square;
-            board = this.RemoveBit(board, square);
-            const piece = this.Position.Squares[square];
-
-            // Because the PST are from white's perspective, we have to flip the square if the piece is black's
-            if (piece.Color === Color.Black) {
-                square ^= 56;
-            }
-
-            // PST scores
-            mgScores[piece.Color] += this.PST[0][piece.Type][square] + this.MGPieceValue[piece.Type];
-            egScores[piece.Color] += this.PST[1][piece.Type][square] + this.EGPieceValue[piece.Type];
-
-            switch (piece.Type) {
-                case Pieces.Knight:{
-                    // Outposts
-                    if ((outpostRanks[piece.Color] & this.squareBB[actualSquare])
-                        && (this.passedMasks[piece.Color][actualSquare] & ~this.fileMasks[actualSquare] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n
-                        && this.PawnAttacks[piece.Color ^ 1][actualSquare] & this.Position.PiecesBB[piece.Color][Pieces.Pawn]) {
-                        mgScores[piece.Color] += this.MGKnightOutpostBonus;
-                        egScores[piece.Color] += this.EGKnightOutpostBonus;
+            if (!this.IsSquareAttacked(kingSquare, this.BoardState.SideToMove ^ 1)) {
+                if (this.BoardState.SideToMove === Color.White) {
+                    if (this.BoardState.CastlingRights & CastlingRights.WhiteKingside
+                        && ((this.BoardState.CastlingPaths[CastlingRights.WhiteKingside] & occupied) === 0n)
+                        && !this.IsPathAttacked(this.betweenMasks[kingSquare][Square.h1])) {
+                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.WhiteKingside], MoveType.Castle));
                     }
 
-                    const attacks = this.KnightAttacks[actualSquare];
-                    const mobility = this.CountBits(attacks);
-
-                    mgScores[piece.Color] += this.MGKnightMobility[mobility];
-                    egScores[piece.Color] += this.EGKnightMobility[mobility];
-
-                    break;
-                }
-                case Pieces.Bishop: {
-                    bishopCount[piece.Color]++;
-
-                    const attacks = this.GenerateBishopAttacks(allOccupancies, actualSquare);
-                    const mobility = this.CountBits(attacks);
-
-                    mgScores[piece.Color] += this.MGBishopMobility[mobility];
-                    egScores[piece.Color] += this.EGBishopMobility[mobility];
-
-                    // Outposts
-                    if ((outpostRanks[piece.Color] & this.squareBB[actualSquare])
-                        && (this.passedMasks[piece.Color][actualSquare] & ~this.fileMasks[actualSquare] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n
-                        && this.PawnAttacks[piece.Color ^ 1][actualSquare] & this.Position.PiecesBB[piece.Color][Pieces.Pawn]) {
-                        mgScores[piece.Color] += this.MGBishopOutpostBonus;
-                        egScores[piece.Color] += this.EGBishopOutpostBonus;
+                    if (this.BoardState.CastlingRights & CastlingRights.WhiteQueenside
+                        && ((this.BoardState.CastlingPaths[CastlingRights.WhiteQueenside] & occupied) === 0n)
+                        && !this.IsPathAttacked(this.betweenMasks[kingSquare][Square.c1])) {
+                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.WhiteQueenside], MoveType.Castle));
                     }
-
-                    // An idea from Stockfish - If the bishop is on a corner square and blocked diagonally by a friendly pawn it deserves a penalty
-                    if (this.isChess960 && (square === Square.a1 || square === Square.h1)) {
-                        let blockingPawn = (square & 7) === 0 ? (1n << 49n) : (1n << 54n);
-
-                        if (piece.Color === Color.Black) {
-                            blockingPawn = blockingPawn >> 40n;
-                        }
-
-                        if ((blockingPawn & this.Position.PiecesBB[piece.Color][Pieces.Pawn]) !== 0n) {
-                            mgScores[piece.Color] -= this.MGCorneredBishopPenalty;
-                            egScores[piece.Color] -= this.EGCorneredBishopPenalty;
-                        }
-                    }
-
-                    break;
-                }
-                case Pieces.Rook: {
-                    const attacks = this.GenerateRookAttacks(allOccupancies, actualSquare);
-                    const mobility = this.CountBits(attacks);
-
-                    mgScores[piece.Color] += this.MGRookMobility[mobility];
-                    egScores[piece.Color] += this.EGRookMobility[mobility];
-
-                    // Semi-open file
-                    if ((this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
-                        // If the file also doesn't have enemy pawns, it's an open file
-                        if ((this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn] & this.fileMasks[square]) === 0n) {
-                            mgScores[piece.Color] += this.MGfileOpenScore;
-                        }
-                        else {
-                            mgScores[piece.Color] += this.MGfileSemiOpenScore;
-                        }
-                    }
-
-                    // Bonus if rook is on the same file as opponent's queen
-                    if (this.fileMasks[square] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Queen]) {
-                        mgScores[piece.Color] += this.MGrookQueenFileBonus;
-                    }
-                    break;
-                }
-                case Pieces.Queen: {
-                    const attacks = this.GenerateBishopAttacks(allOccupancies, actualSquare) | this.GenerateRookAttacks(allOccupancies, actualSquare);
-                    const mobility = this.CountBits(attacks);
-
-                    mgScores[piece.Color] += this.MGQueenMobility[mobility];
-                    egScores[piece.Color] += this.EGQueenMobility[mobility];
-
-                    break;
-                }
-                case Pieces.King: {
-                    if (actualSquare !== this.KingSquares[piece.Color]) {
-                        this.KingSquares[piece.Color] = actualSquare;
-                        const file = Math.min(Math.max(square & 7, 1), 6);
-                        let j = 1;
-    
-                        for (let i = file - 1; i <= file + 1; i++) {
-                            if ((this.fileMasks[i] & this.Position.PiecesBB[piece.Color][Pieces.Pawn]) === 0n) {
-                                mgScores[piece.Color] -= this.MGKingSemiOpenPenalty * j * j;
-                                j++;
-                            }
-                        }
-                    }
-
-                    break;
-                }
-            }
-        }
-
-        if (bishopCount[Color.White] >= 2) {
-            mgScores[Color.White] += this.MGBishopPairBonus;
-            egScores[Color.White] += this.EGBishopPairBonus;
-        }
-        if (bishopCount[Color.Black] >= 2) {
-            mgScores[Color.Black] += this.MGBishopPairBonus;
-            egScores[Color.Black] += this.EGBishopPairBonus;
-        }
-
-        phase = ((phase * 256 + (this.PhaseTotal / 2)) / this.PhaseTotal) | 0;
-
-        const mgScore = mgScores[this.Position.SideToMove] - mgScores[this.Position.SideToMove ^ 1];
-        const egScore = egScores[this.Position.SideToMove] - egScores[this.Position.SideToMove ^ 1];
-
-        return (((mgScore * (256 - phase)) + (egScore * phase)) / 256 | 0);
-    }
-
-    EvaluatePawns() {
-        let mgScores = [0, 0];
-        let egScores = [0, 0];
-        let board = this.Position.PiecesBB[Color.White][Pieces.Pawn] | this.Position.PiecesBB[Color.Black][Pieces.Pawn];
-
-        while (board) {
-            let square = this.GetLS1B(board);
-            board = this.RemoveBit(board, square);
-            const piece = this.Position.Squares[square];
-
-            if (piece.Color === Color.Black) {
-                square ^= 56;
-            }
-
-            mgScores[piece.Color] += this.PST[0][Pieces.Pawn][square] + this.MGPieceValue[Pieces.Pawn];
-            egScores[piece.Color] += this.PST[1][Pieces.Pawn][square] + this.EGPieceValue[Pieces.Pawn];
-
-            // doubled pawns
-            const pawnsOnFile = this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.fileMasks[square];
-            if ((pawnsOnFile & (pawnsOnFile - 1n)) !== 0n) {
-                mgScores[piece.Color] -= this.MGdoubledPenalty;
-                egScores[piece.Color] -= this.EGdoubledPenalty;
-            }
-
-            // isolated pawns
-            if ((this.Position.PiecesBB[piece.Color][Pieces.Pawn] & this.isolatedMasks[square]) === 0n) {
-                mgScores[piece.Color] -= this.MGisolatedPenalty;
-                egScores[piece.Color] -= this.EGisolatedPenalty;
-            }
-
-            // passed pawns
-            if ((this.passedMasks[piece.Color][square] & this.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n) {
-                // https://www.chessprogramming.org/Ranks
-                const rank = 7 - (square >> 3);
-                mgScores[piece.Color] += this.MGpassedBonus[rank];
-                egScores[piece.Color] += this.EGpassedBonus[rank];
-            }
-        }
-
-        return { mgScores, egScores };
-    }
-
-    /***************************
-     * 
-     * Search
-     * 
-     **************************/
-
-    private readonly MaxPly = 100;
-    private readonly Checkmate = 15000;
-    private readonly Inf = 20000;
-
-    private readonly search: Search = {
-        nodes: 0,
-        killers: Array(2).fill(0).map(() => Array(this.MaxPly).fill(0)),
-        history: Array(2).fill(0).map(() => Array(64).fill(0).map(() => Array(64).fill(0))), // 2 64x64 arrays
-        bestMove: { move: 0, score: -this.Inf },
-    }
-
-    /**
-     * The main search function
-     */
-    Search(targetDepth: number) {
-        this.search.nodes = 0;
-        let pv = { moves: [] }; // object to make use of pass-by-reference (because no pointers in JS)
-        let bestmove: string = "";
-
-        this.StartTimer();
-
-        // starting bounds
-        let alpha = -this.Inf;
-        let beta = this.Inf;
-        let score = -this.Inf;
-
-        this.AgeHistory();
-
-        // start the timer
-        const start = Date.now();
-
-        // Returns a cp score or checkmate score if getting checkmated
-        const getScore = () => {
-            if (score < -this.Checkmate) {
-                return `mate ${(-this.Inf - score) / 2}`;
-            }
-
-            if (score > this.Checkmate) {
-                return `mate ${((this.Inf - score + 1) / 2)}`;
-            }
-
-            return `cp ${score}`;
-        }
-
-        // Need to set this to 0 for the search
-        this.Position.Ply = 0;
-
-        // The main iterative deepening search loop
-        for (let depth = 1; depth <= targetDepth; depth++) {
-            pv.moves.length = 0;
-
-            let margin = 10;
-
-            if (depth >= 4) {
-                alpha = Math.max(score - margin, -this.Inf);
-                beta = Math.min(score + margin, this.Inf);
-            }
-
-            // Aspiration window
-            while (true) {
-                score = this.Negamax(depth, alpha, beta, pv);
-
-                if (this.Timer.stop) {
-                    break;
-                }
-
-                // Adjust the aspiration window depending on whether the search failed high or low, or break from the loop if it didn't.
-                if (score <= alpha) {
-                    alpha = Math.max(score - margin, -this.Inf);
-                    beta = (alpha + beta) / 2;
-                }
-                else if (score >= beta) {
-                    beta = Math.min(score + margin, this.Inf);
                 }
                 else {
+                    if (this.BoardState.CastlingRights & CastlingRights.BlackKingside
+                        && ((this.BoardState.CastlingPaths[CastlingRights.BlackKingside] & occupied) === 0n)
+                        && !this.IsPathAttacked(this.betweenMasks[kingSquare][Square.h8])) {
+                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.BlackKingside], MoveType.Castle));
+                    }
+
+                    if (this.BoardState.CastlingRights & CastlingRights.BlackQueenside
+                        && ((this.BoardState.CastlingPaths[CastlingRights.BlackQueenside] & occupied) === 0n)
+                        && !this.IsPathAttacked(this.betweenMasks[kingSquare][Square.c8])) {
+                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.BlackQueenside], MoveType.Castle));
+                    }
+                }
+            }
+        }
+
+        return moveList;
+    }
+
+    AttacksToByColor(square: Square, color: Color) {
+        const pawns = this.BoardState.PiecesBB[PieceType.Pawn + (6 * color)] & this.PawnAttacks[square + (64 * (color ^ 1))];
+        const knights = this.BoardState.PiecesBB[PieceType.Knight + (6 * color)] & this.KnightAttacks[square];
+        const kings = this.BoardState.PiecesBB[PieceType.King + (6 * color)] & this.KingAttacks[square];
+        const occupancy = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
+
+        let bishopQueens = this.BoardState.PiecesBB[PieceType.Bishop + (6 * color)] | this.BoardState.PiecesBB[PieceType.Queen + (6 * color)];
+        bishopQueens &= this.GenerateBishopAttacks(occupancy, square);
+
+        let rookQueens = this.BoardState.PiecesBB[PieceType.Rook + (6 * color)] | this.BoardState.PiecesBB[PieceType.Queen + (6 * color)];
+        rookQueens &= this.GenerateRookAttacks(occupancy, square);
+
+        return pawns | knights | kings | bishopQueens | rookQueens;
+    }
+
+    /**
+     * Gets all attacked squares, without indicating the pieces attacking
+     * @param side The side attacking
+     * @param occupied Should be the full board occupancy
+     * @returns All the attacked squares
+     */
+    AttackedSquares(side: Color, occupied: bigint) {
+        const pawns = this.BoardState.PiecesBB[PieceType.Pawn + (6 * side)];
+        let pieces = this.BoardState.OccupanciesBB[side] & ~pawns;
+        let upLeft = Direction.NORTHWEST;
+        let upRight = Direction.NORTHEAST;
+
+        if (side === Color.Black) {
+            upLeft = Direction.SOUTHEAST;
+            upRight = Direction.SOUTHWEST;
+        }
+
+        // pawn attacks
+        let attacks = this.Shift(pawns, upLeft) | this.Shift(pawns, upRight);
+
+        // all other piece attacks
+        while (pieces) {
+            const square = this.GetLS1B(pieces);
+            pieces = this.RemoveBit(pieces, square);
+            const pieceType = (this.BoardState.Squares[square] as Piece).Type;
+
+            switch (pieceType) {
+                case PieceType.Knight: {
+                    attacks |= this.KnightAttacks[square];
                     break;
                 }
-
-                margin += margin / 5 + 2;
+                case PieceType.Bishop: {
+                    attacks |= this.GenerateBishopAttacks(occupied, square);
+                    break;
+                }
+                case PieceType.Rook: {
+                    attacks |= this.GenerateRookAttacks(occupied, square);
+                    break;
+                }
+                case PieceType.Queen: {
+                    attacks |= this.GenerateBishopAttacks(occupied, square) | this.GenerateRookAttacks(occupied, square);
+                    break;
+                }
+                case PieceType.King: {
+                    attacks |= this.KingAttacks[square];
+                    break;
+                }
+                default: {
+                    // If this ever gets hit, there's a serious issue
+                    throw new Error("Invalid piece in move gen.");
+                }
             }
-
-            const end = Date.now();
-
-            if (this.Timer.stop) {
-                break;
-            }
-
-            bestmove = this.PrettyPrintMove(pv.moves[0]);
-
-            console.log(`info depth ${depth} score ${getScore()} nodes ${this.search.nodes} nps ${(this.search.nodes * 1000) / (end - start) | 0} time ${end - start} pv ${pv.moves.map(x => this.PrettyPrintMove(x)).join(" ")}`);
         }
 
-        console.log(`bestmove ${bestmove}`);
-        return bestmove;
+        return attacks;
     }
 
-    Negamax(depth: number, alpha: number, beta: number, pvMoves: PVLine, nullMoveAllowed = true): number {
-        let bestScore = -this.Inf;
-        let flag = HashFlag.Alpha;
-        let legalMoves = 0;
-        let canFutilityPrune = false;
-        const isPVNode = beta - alpha > 1;
-        const isRootNode = this.Position.Ply === 0;
-        const childPVMoves: PVLine = { moves: [] };
+    /****************************
+     * 
+     *     Move Functions
+     *
+     ****************************/
 
-        // Check whether search time is up every 1000 nodes
-        if (this.search.nodes % 1000 === 0) {
-            this.CheckTime();
+    private readonly boardStates: StateCopy[] = [];
 
-            if (this.Timer.stop) {
-                return 0;
-            }
-        }
-
-        this.search.nodes++;
-
-        // Check for 3-fold or 50 moves draw
-        if (!isRootNode && (this.IsRepetition() || this.Position.HalfMoves >= 100)) {
-            return 0;
-        }
-
-        if (depth <= 0) {
-            return this.Quiescence(alpha, beta);
-        }
-
-        const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
-
-        // Check extension - search one more ply if side to move is in check
-        if (inCheck) {
-            depth += 1;
-        }
-
-        // Check the transposition table for matching position and score
-        const { ttScore, ttMove } = this.ProbeTT(depth, alpha, beta);
-        if (ttScore !== this.HashNoMove && !isPVNode) {
-            return ttScore;
-        }
-
-        let bestMove = ttMove;
-
-        if (!isRootNode && !inCheck) {
-            const staticEval = this.Evaluate();
-
-            // Razoring
-            if (depth <= 2 && staticEval + 150 * depth < alpha) {
-                const score = this.Quiescence(alpha, beta);
-                if (score < alpha) {
-                    return score;
-                }
-            }
-
-            // Reverse futility pruning (static null move pruning)
-            if (!isPVNode && depth <= 6 && staticEval - (50 * depth) >= beta && Math.abs(staticEval) < this.Checkmate) {
-                return staticEval;
-            }
-
-            // Null move pruning
-            if (!isPVNode && nullMoveAllowed && depth >= 2 && staticEval >= beta) {
-                this.MakeNullMove();
-
-                const R = 3 + Math.floor(depth / 5);
-                let score = -this.Negamax(depth - 1 - R, -beta, -beta + 1, childPVMoves, false);
-
-                this.UnmakeNullMove();
-
-                childPVMoves.moves.length = 0;
-
-                if (score >= beta) {
-                    if (Math.abs(score) > this.Checkmate) {
-                        return beta;
-                    }
-                    return score;
-                }
-            }
-
-            // Futility pruning
-            if (depth <= 4 && staticEval + (300 * depth) <= alpha) {
-                canFutilityPrune = true;
-            }
-        }
-
-        let moves = inCheck ? this.GenerateEvasions() : this.GenerateMoves();
-        moves = this.SortMoves(moves, ttMove);
-
-        for (let i = 0; i < moves.length; i++) {
-            const move = moves[i];
-
-            const capture = this.MoveIsCapture(move);
-            const promotion = this.MoveIsPromotion(move);
-
-            if (!capture && !promotion && bestScore > -this.Checkmate) {
-                // Late move pruning
-                if (depth <= 2 && legalMoves > 5 * depth) {
-                    continue;
-                }
-
-                // Futility pruning
-                // also (!inCheck && depth <= 4 && staticEval + (300 * depth) <= alpha) set above
-                if (canFutilityPrune && legalMoves > 1) {
-                    continue;
-                }
-            }            
-
-            // Skip bad captures
-            if (!inCheck && capture && this.See(move) < -300 * depth) {
-                continue;
-            }
-
-            if (!this.MakeMove(move)) {
-                this.UnmakeMove(move);
-                continue;
-            }
-
-            legalMoves++;
-
-            let score = 0;
-            let R = Math.log(depth * legalMoves ** 2) * 0.45 | 0;
-
-            if (legalMoves > 1) {
-                // Start with a reduced search
-                score = -this.Negamax(depth - R - 1, -alpha - 1, -alpha, childPVMoves);
-
-                // If the search failed high, do another full-depth search
-                if (score > alpha && R > 0) {
-                    score = -this.Negamax(depth - 1, -beta, -alpha, childPVMoves);
-                }
-            }
-            // On the first move do a full-depth search
-            else {
-                score = -this.Negamax(depth - 1, -beta, -alpha, childPVMoves);
-            }
-
-            this.UnmakeMove(move);
-
-            if (score > bestScore) {
-                bestScore = score;
-
-                if (score > alpha) {
-                    bestMove = move;
-
-                    // update the PV line
-                    pvMoves.moves.length = 0;
-                    pvMoves.moves.push(move);
-                    pvMoves.moves.push(...childPVMoves.moves);
-
-                    // Extend the search time a bit if the score has dropped from the previous best move
-                    this.Timer.extended = depth > 1 && score < this.search.bestMove.score - 30;
-
-                    this.search.bestMove = { move: bestMove, score: bestScore };
-
-                    if (score < beta) {
-                        alpha = score;
-                        flag = HashFlag.Exact;
-                    }
-                    else {
-                        flag = HashFlag.Beta;
-
-                        if (!capture) {
-                            // Store the move if it's a killer
-                            this.search.killers[1][this.Position.Ply] = this.search.killers[0][this.Position.Ply];
-                            this.search.killers[0][this.Position.Ply] = move;
-
-                            // increment history counter
-                            this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] += depth * depth;
-                        }
-
-                        this.WriteTT(depth, flag, bestScore, bestMove);
-                        return beta;
-                    }
-                }
-            }
-            else {
-                if (!capture) {
-                    if (this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] > 0) {
-                        this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] -= 1;
-                    }
-                }
-            }
-
-            childPVMoves.moves.length = 0;
-        }
-
-        // If there are no legal moves, check for checkmate or stalemate
-        if (legalMoves === 0) {
-            // If checkmate, returns an infinity score with the current play added to it (so faster checkmates will be scored higher)
-            if (inCheck) {
-                return -this.Inf + this.Position.Ply;
-            }
-            // If no available moves and not checkmate, then it's a stalemate
-            else {
-                return 0;
-            }
-        }
-
-        this.WriteTT(depth, flag, bestScore, bestMove);
-
-        return bestScore;
+    /** Place a piece on the square and updates board state */
+    PlacePiece(piece: PieceType, color: Color, square: Square) {
+        this.BoardState.PiecesBB[piece + (6 * color)] = this.SetBit(this.BoardState.PiecesBB[piece + (6 * color)], square);
+        this.BoardState.OccupanciesBB[color] = this.SetBit(this.BoardState.OccupanciesBB[color], square);
+        this.BoardState.Squares[square] = { Type: piece, Color: color };
     }
 
-    Quiescence(alpha: number, beta: number) {
-        // Check whether search time is up every 1000 nodes
-        if (this.search.nodes % 1000 === 0) {
-            this.CheckTime();
+    /** Remove a piece on the square and updates board state */
+    RemovePiece(piece: PieceType, color: Color, square: Square) {
+        this.BoardState.PiecesBB[piece + (6 * color)] = this.RemoveBit(this.BoardState.PiecesBB[piece + (6 * color)], square);
+        this.BoardState.OccupanciesBB[color] = this.RemoveBit(this.BoardState.OccupanciesBB[color], square);
+        this.BoardState.Squares[square] = undefined;
+    }
 
-            if (this.Timer.stop) {
-                return 0;
-            }
+    /** Moves a piece from and to given squares and updates board state */
+    MovePiece(piece: Piece, from: Square, to: Square) {
+        const moveBB = this.squareBB[from] | this.squareBB[to];
+        this.BoardState.PiecesBB[piece.Type + (6 * piece.Color)] ^= moveBB;
+        this.BoardState.OccupanciesBB[piece.Color] ^= moveBB;
+        this.BoardState.Squares[from] = undefined;
+        this.BoardState.Squares[to] = piece;
+    }
+
+    DoCastle(piece: Piece, from: Square, to: Square) {
+        const kingSide = to > from;
+        let kingTo = Square.g1 ^ (piece.Color * 56);
+        let rookTo = Square.f1 ^ (piece.Color * 56);
+
+        if (!kingSide) {
+            kingTo = Square.c1 ^ (piece.Color * 56);
+            rookTo = Square.d1 ^ (piece.Color * 56);
+        }
+        const rookFrom = to;
+
+        // Move the king
+        this.MovePiece(piece, from, kingTo);
+
+        // Move the rook
+        const rookPiece = this.BoardState.Squares[rookFrom] as Piece;
+        this.MovePiece(rookPiece, rookFrom, rookTo);
+
+        this.BoardState.Hash ^= this.Zobrist.Pieces[piece.Color][PieceType.Rook][rookFrom] ^ this.Zobrist.Pieces[piece.Color][PieceType.Rook][rookTo];
+    }
+
+    UndoCastle(from: Square, to: Square) {
+        const color = this.BoardState.SideToMove;
+        const kingSide = to > from;
+        let kingTo = Square.g1 ^ (color * 56);
+        let rookTo = Square.f1 ^ (color * 56);
+
+        if (!kingSide) {
+            kingTo = Square.c1 ^ (color * 56);
+            rookTo = Square.d1 ^ (color * 56);
+        }
+        const rookFrom = to;
+
+        const kingPiece = this.BoardState.Squares[kingTo] as Piece;
+        const rookPiece = this.BoardState.Squares[rookTo] as Piece;
+
+        this.MovePiece(kingPiece, kingTo, from);
+        this.MovePiece(rookPiece, rookTo, rookFrom);
+    }
+
+    /**
+     * Make the given move and update board state and hashes
+     * @param move The move to make
+     * @returns False if the move is illegal (leaves the king in check), otherwise true
+     */
+    MakeMove(move: number) {
+        const from = move & 0x3f;
+        const to = (move & 0xfc0) >> 6;
+        const moveType = (move & 0x3f80) >> 12;
+        const piece = this.BoardState.Squares[from] as Piece;
+        let captured = moveType === MoveType.EnPassant ? { Type: PieceType.Pawn, Color: this.BoardState.SideToMove ^ 1 } : this.BoardState.Squares[to];
+
+        this.boardStates.push({
+            CastlingRights: this.BoardState.CastlingRights,
+            EnPassSq: this.BoardState.EnPassSq,
+            Captured: captured,
+            Hash: this.BoardState.Hash,
+            PawnHash: this.BoardState.PawnHash,
+            HalfMoves: this.BoardState.HalfMoves,
+            Phase: this.BoardState.Phase,
+        });
+
+        this.BoardState.Ply++;
+        this.BoardState.HalfMoves++;
+
+        // Clear the en passant square
+        if (this.BoardState.EnPassSq !== Square.no_sq) {
+            this.BoardState.Hash ^= this.Zobrist.EnPassant[this.BoardState.EnPassSq];
+            this.BoardState.EnPassSq = Square.no_sq;
         }
 
-        let flag = HashFlag.Alpha;
-        this.search.nodes++;
-
-        // Check the transposition table for matching position and score
-        const { ttScore, ttMove } = this.ProbeTT(0, alpha, beta);
-        if (ttScore !== this.HashNoMove) {
-            return ttScore;
-        }
-
-        let bestMove = ttMove;
-        let bestScore = ttScore;
-        let futilityValue = bestScore;
-
-        const inCheck = this.IsSquareAttacked(this.GetLS1B(this.Position.PiecesBB[this.Position.SideToMove][Pieces.King]), this.Position.SideToMove ^ 1);
-
-        if (inCheck) {
-            bestScore = -this.Inf;
-            futilityValue = bestScore;
+        if (moveType === MoveType.Castle) {
+            this.DoCastle(piece, from, to);
         }
         else {
-            if (bestScore === this.HashNoMove) {
-                bestScore = this.Evaluate();
-            }
+            let up = piece.Color === Color.White ? Direction.NORTH : Direction.SOUTH;
+            if (captured !== undefined) {
+                let captureSquare = to;
     
-            if (bestScore >= beta) {
-                return bestScore;
-            }
+                if (moveType === MoveType.EnPassant) {
+                    captureSquare = to + up;
+                }
     
-            if (bestScore > alpha) {
-                alpha = bestScore;
-            }
+                this.RemovePiece(captured.Type, captured.Color, captureSquare);
+                this.BoardState.HalfMoves = 0;
 
-            futilityValue = bestScore + 150;
-        }
+                this.BoardState.Hash ^= this.Zobrist.Pieces[captured.Color][captured.Type][to];
 
-        let moves = inCheck ? this.GenerateEvasions() : this.GenerateMoves(true);
-        moves = this.SortMoves(moves, bestMove);
+                this.BoardState.Phase += this.PhaseValues[captured.Type];
 
-        for (let i = 0; i < moves.length; i++) {
-            const move = moves[i];
-
-            if (!inCheck && !this.MoveIsPromotion(move)) {
-                const value = futilityValue + this.EGPieceValue[this.Position.Squares[(move & 0xfc0) >> 6]?.Type ?? Pieces.Pawn];
-
-                if (value <= alpha) {
-                    if (bestScore < value) {
-                        bestScore = value;
-                    }
-                    continue;
+                if (captured.Type === PieceType.Pawn) {
+                    this.BoardState.PawnHash ^= this.Zobrist.Pieces[captured.Color][captured.Type][to];
                 }
             }
+    
+            this.MovePiece(piece, from, to);
 
-            if (this.See(move) < 0) {
-                continue;
-            }
-
-            if (!this.MakeMove(move)) {
-                this.UnmakeMove(move);
-                continue;
-            }
-
-            let score = -this.Quiescence(-beta, -alpha);
-
-            this.UnmakeMove(move);
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestMove = move;
-            }
-
-            if (score >= beta) {
-                this.WriteTT(0, HashFlag.Beta, bestScore, bestMove);
-                return bestScore;
-            }
-
-            if (score > alpha) {
-                flag = HashFlag.Exact;
-                alpha = score;
+            this.BoardState.Hash ^= this.Zobrist.Pieces[piece.Color][piece.Type][from] ^ this.Zobrist.Pieces[piece.Color][piece.Type][to];
+    
+            if (piece.Type === PieceType.Pawn) {
+                this.BoardState.HalfMoves = 0;
+                this.BoardState.PawnHash ^= this.Zobrist.Pieces[piece.Color][piece.Type][from] ^ this.Zobrist.Pieces[piece.Color][piece.Type][to];
+    
+                if (moveType === MoveType.Promotion) {
+                    const promotionType: Piece = { Type: move >> 14, Color: piece.Color };
+                    this.RemovePiece(piece.Type, piece.Color, to);
+                    this.PlacePiece(promotionType.Type, promotionType.Color, to);
+                    this.BoardState.Phase += this.PhaseValues[PieceType.Pawn];
+                    this.BoardState.Phase -= this.PhaseValues[promotionType.Type];
+                    this.BoardState.Hash ^= this.Zobrist.Pieces[piece.Color][piece.Type][to] ^ this.Zobrist.Pieces[promotionType.Color][promotionType.Type][to];
+                    this.BoardState.PawnHash ^= this.Zobrist.Pieces[piece.Color][piece.Type][to];
+                }
+                // If a pawn double push, set the en passant square
+                else if ((to ^ from) === 16) {
+                    this.BoardState.EnPassSq = to + up;
+                    this.BoardState.Hash ^= this.Zobrist.EnPassant[this.BoardState.EnPassSq];
+                }
             }
         }
 
-        if (inCheck && bestScore === -this.Inf) {
-            return -this.Inf + this.Position.Ply;
-        }
+        // update castling rights
+        this.BoardState.Hash ^= this.Zobrist.Castle[this.BoardState.CastlingRights];
+        this.BoardState.CastlingRights &= this.BoardState.CastlingSquaresMask[from] & this.BoardState.CastlingSquaresMask[to];
+        this.BoardState.Hash ^= this.Zobrist.Castle[this.BoardState.CastlingRights];
 
-        this.WriteTT(0, flag, bestScore, bestMove);
+        // Update the side to move
+        this.BoardState.SideToMove ^= 1;
+        this.BoardState.Hash ^= this.Zobrist.SideToMove;
 
-        return bestScore;
+        this.BoardHistory[this.BoardHistory.length] = this.BoardState.Hash;
+
+        // Because the move generator generates pseudo-legal moves,
+        // The move that was just made might have left the side-to-move's king in check
+        // Make sure that hasn't happened
+        return !this.IsSquareAttacked(this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (6 * (this.BoardState.SideToMove ^ 1))]), this.BoardState.SideToMove);
     }
 
-    IsRepetition() {
-        for (let i = this.PositionHistory.length - this.Position.HalfMoves; i < this.PositionHistory.length - 1; i++) {
-            if (this.PositionHistory[i] === this.Position.Hash) {
-                return true;
+    UnmakeMove(move: number) {
+        const state = this.boardStates.pop() as StateCopy;
+
+        this.BoardState.Ply--;
+
+        this.BoardHistory.pop();
+
+        // Replace current position properties with those retreived from the state
+        this.BoardState.CastlingRights = state.CastlingRights;
+        this.BoardState.EnPassSq = state.EnPassSq;
+        this.BoardState.HalfMoves = state.HalfMoves;
+        this.BoardState.Phase = state.Phase;
+
+        // Flip the side to move
+        this.BoardState.SideToMove ^= 1;
+
+        const from = move & 0x3f;
+        const to = (move & 0xfc0) >> 6;
+        const moveType = (move & 0x3f80) >> 12;
+        const piece = this.BoardState.Squares[to] as Piece;
+
+        if (moveType === MoveType.Castle) {
+            this.UndoCastle(from, to);
+        }
+        else if (moveType === MoveType.Promotion) {
+            this.RemovePiece(piece.Type, piece.Color, to);
+            this.PlacePiece(PieceType.Pawn, piece.Color, from);
+
+            if (state.Captured) {
+                this.PlacePiece(state.Captured.Type, state.Captured.Color, to);
             }
+        }
+        else {
+            this.MovePiece(piece, to, from);
+
+            if (state.Captured) {
+                let captureSquare = to;
+                let captured = state.Captured;
+
+                if (moveType === MoveType.EnPassant) {
+                    captureSquare = piece.Color === Color.White ? to + 8 : to - 8;
+                }
+
+                this.PlacePiece(captured.Type, captured.Color, captureSquare);
+            }
+        }
+
+        // Set hash to previous value
+        this.BoardState.Hash = state.Hash;
+        this.BoardState.PawnHash = state.PawnHash;
+    }
+
+    MoveToString(move: number) {
+        const from = move & 0x3f;
+        let to = (move & 0xfc0) >> 6;
+        const type = (move & 0x3f80) >> 12;
+
+        if (type === MoveType.Castle && !this.isChess960) {
+            to = to > from ? to - 1 : to + 2;
+        }
+
+        let prettymove = `${Square[from]}${Square[to]}`;
+        if (type === MoveType.Promotion) {
+            const promotionType = move >> 14;
+            if (promotionType === PromotionType.Knight) {
+                prettymove += "n";
+            }
+            if (promotionType === PromotionType.Bishop) {
+                prettymove += "b";
+            }
+            if (promotionType === PromotionType.Rook) {
+                prettymove += "r";
+            }
+            if (promotionType === PromotionType.Queen) {
+                prettymove += "q";
+            }
+        }
+        return prettymove;
+    }
+
+    IsSquareAttacked(square: Square, side: Color) {
+        if (this.PawnAttacks[square + (64 * (side ^ 1))] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * side)]) {
+            return true;
+        }
+        if (this.KnightAttacks[square] & this.BoardState.PiecesBB[PieceType.Knight + (6 * side)]) { 
+            return true;
+        }
+
+        const queens = this.BoardState.PiecesBB[PieceType.Queen + (6 * side)];
+        const occupancy = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
+
+        const bishopQueens = this.BoardState.PiecesBB[PieceType.Bishop + (6 * side)] | queens;
+        // Bishop and Rook attacks are expensive to calcuate, so check the masks first to see if the call even needs to be made
+        if ((this.attackRays[PieceType.Bishop - PieceType.Bishop][square] & bishopQueens) && this.GenerateBishopAttacks(occupancy, square) & bishopQueens) {
+            return true;
+        }
+        
+        const rookQueens = this.BoardState.PiecesBB[PieceType.Rook + (6 * side)] | queens;
+        if ((this.attackRays[PieceType.Rook - PieceType.Bishop][square] & rookQueens) && this.GenerateRookAttacks(occupancy, square) & rookQueens) {
+            return true;
+        }
+        if (this.KingAttacks[square] & this.BoardState.PiecesBB[PieceType.King + (6 * side)]) {
+            return true;
         }
 
         return false;
     }
 
-    AgeHistory() {
-        for (let from = Square.a8; from <= Square.h1; from++) {
-            for (let to = Square.a8; to <= Square.h1; to++) {
-                this.search.history[this.Position.SideToMove][from][to] /= 2;
-            }
-        }
-    }
-
     /**
-     * Scores and sorts moves
-     * @param moves The moves to score and sort
-     * @param ttMove The best move, to place at the top of the sorted list
+     * Checks if any squares in a bitboard are attacked
+     * @returns 
      */
-    SortMoves(moves: Move[], ttMove: Move) {
-        const scores: { move: Move, score: number }[] = [];
-
-        // Score moves
-        for (let i = 0; i < moves.length; i++) {
-            const move = moves[i];
-
-            // If the move is the move from the transposition table (the PV move), we should make sure it's searched first
-            if (move === ttMove) {
-                scores.push({ move, score: this.Inf });
-            }
-            // MVV-LVA for captures
-            else if (this.MoveIsCapture(move)) {
-                const movingPiece = this.Position.Squares[move & 0x3f];
-                let capturedPiece = this.Position.Squares[(move & 0xfc0) >> 6];
-
-                if ((move & 0x3f80) >> 12 === MoveType.EnPassant) {
-                    capturedPiece = this.Position.Squares[this.Position.SideToMove === Color.White ? ((move & 0xfc0) >> 6) + 8 : ((move & 0xfc0) >> 6) - 8];
-                }
-
-                if (movingPiece.Type > capturedPiece.Type) {
-                    const score = this.MGPieceValue[capturedPiece.Type] - movingPiece.Type + 7000;
-                    scores.push({ move, score });
-                }
-                else {
-                    const score = this.MGPieceValue[capturedPiece.Type] - movingPiece.Type + 10000;
-                    scores.push({ move, score });
-                }
-            }
-            else {
-                if (move === this.search.killers[0][this.Position.Ply]) {
-                    scores.push({ move, score: 9000 });
-                }
-                else if (move === this.search.killers[1][this.Position.Ply]) {
-                    scores.push({ move, score: 8000 });
-                }
-                else {
-                    scores.push({ move, score: this.search.history[this.Position.SideToMove][move & 0x3f][(move & 0xfc0) >> 6] })
-                }
-            }
-        }
-
-        // Sort moves
-        const len = scores.length;
-        for (let i = 1; i < len; i++) {
-            let current = scores[i];
-            let j = i - 1;
-            while ((j > -1) && (current.score > scores[j].score)) {
-                scores[j + 1] = scores[j];
-                j--;
-            }
-            scores[j + 1] = current;
-        }
-
-        return scores.map(({ move }) => move);
-    }
-
-    See(move: Move) {
-        const toSquare = (move & 0xfc0) >> 6;
-        const fromSquare = move & 0x3f;
-        const movePiece = this.Position.Squares[fromSquare].Type;
-        let attackedPiece = this.Position.Squares[toSquare]?.Type;
-        let sideToMove = this.Position.SideToMove ^ 1;
-
-        if (attackedPiece === undefined) {
-            return 0;
-        }
-
-        const gain = [];
-        let depth = 0;
-        let attackerBB = this.SetBit(0n, fromSquare);
-        let attdef = this.AttacksTo(toSquare);
-        let movedBB = 0n;
-        const maxXray = this.Position.PiecesBB[Color.White][Pieces.Pawn] | this.Position.PiecesBB[Color.White][Pieces.Bishop]
-                    | this.Position.PiecesBB[Color.White][Pieces.Rook] | this.Position.PiecesBB[Color.White][Pieces.Queen]
-                    | this.Position.PiecesBB[Color.Black][Pieces.Pawn] | this.Position.PiecesBB[Color.Black][Pieces.Bishop]
-                    | this.Position.PiecesBB[Color.Black][Pieces.Rook] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
-
-        gain[depth] = this.MGPieceValue[attackedPiece];
-
-        while (attackerBB) {
-            depth++;
-
-            gain[depth] = this.MGPieceValue[movePiece] - gain[depth - 1];
-
-            if (Math.max(-gain[depth - 1], gain[depth]) < 0) {
+    IsPathAttacked(path: bigint) {
+        let attacked = false;
+        while (path) {
+            const square = this.GetLS1B(path);
+            path = this.RemoveBit(path, square);
+            if (this.IsSquareAttacked(square, this.BoardState.SideToMove ^ 1)) {
+                attacked = true;
                 break;
             }
-
-            attdef ^= attackerBB;
-            movedBB |= attackerBB;
-
-            if (attackerBB & maxXray) {
-                attdef |= this.ConsiderXRays(toSquare) & ~movedBB;
-            }
-
-            const { bitboard, piece } = this.GetLeastValuablePiece(attdef, sideToMove, attackedPiece);
-            attackerBB = bitboard;
-            attackedPiece = piece;
-            sideToMove ^= 1;
         }
 
-        while (--depth) {
-            gain[depth - 1] = -Math.max(-gain[depth - 1], gain[depth]);
-        }
-
-        return gain[0];
-    }
-
-    AttacksTo(square: Square) {
-        const pawns = (this.Position.PiecesBB[Color.White][Pieces.Pawn] & this.PawnAttacks[Color.Black][square])
-                        | ((this.Position.PiecesBB[Color.Black][Pieces.Pawn] & this.PawnAttacks[Color.White][square]));
-        const knights = (this.Position.PiecesBB[Color.White][Pieces.Knight] | this.Position.PiecesBB[Color.Black][Pieces.Knight]) & this.KnightAttacks[square];
-        const kings = (this.Position.PiecesBB[Color.White][Pieces.King] | this.Position.PiecesBB[Color.Black][Pieces.King]) & this.KingAttacks[square];
-        const occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-
-        let bishopQueens = this.Position.PiecesBB[Color.White][Pieces.Bishop] | this.Position.PiecesBB[Color.Black][Pieces.Bishop]
-                        | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
-        bishopQueens &= this.GenerateBishopAttacks(occupancy, square);
-
-        let rookQueens = this.Position.PiecesBB[Color.White][Pieces.Rook] | this.Position.PiecesBB[Color.Black][Pieces.Rook]
-                        | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
-        rookQueens &= this.GenerateRookAttacks(occupancy, square);
-
-        return pawns | knights | kings | bishopQueens | rookQueens;
-    }
-
-    AttacksToByColor(square: Square, color: Color) {
-        const pawns = this.Position.PiecesBB[color][Pieces.Pawn] & this.PawnAttacks[color ^ 1][square];
-        const knights = this.Position.PiecesBB[color][Pieces.Knight] & this.KnightAttacks[square];
-        const kings = this.Position.PiecesBB[color][Pieces.King] & this.KingAttacks[square];
-        const occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-
-        let bishopQueens = this.Position.PiecesBB[color][Pieces.Bishop] | this.Position.PiecesBB[color][Pieces.Queen];
-        bishopQueens &= this.GenerateBishopAttacks(occupancy, square);
-
-        let rookQueens = this.Position.PiecesBB[color][Pieces.Rook] | this.Position.PiecesBB[color][Pieces.Queen];
-        rookQueens &= this.GenerateRookAttacks(occupancy, square);
-
-        return pawns | knights | kings | bishopQueens | rookQueens;
-    }
-
-    ConsiderXRays(square: Square) {
-        const occupancy = this.Position.OccupanciesBB[Color.White] | this.Position.OccupanciesBB[Color.Black];
-        let bishopQueens = this.Position.PiecesBB[Color.White][Pieces.Bishop] | this.Position.PiecesBB[Color.Black][Pieces.Bishop]
-                        | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
-        bishopQueens &= this.GenerateBishopAttacks(occupancy, square);
-
-        let rookQueens = this.Position.PiecesBB[Color.White][Pieces.Rook] | this.Position.PiecesBB[Color.Black][Pieces.Rook]
-                        | this.Position.PiecesBB[Color.White][Pieces.Queen] | this.Position.PiecesBB[Color.Black][Pieces.Queen];
-        rookQueens &= this.GenerateRookAttacks(occupancy, square);
-
-        return bishopQueens | rookQueens;
-    }
-
-    GetLeastValuablePiece(board: bigint, side: Color, piece: Pieces) {
-        for (piece = Pieces.Pawn; piece <= Pieces.King; piece++) {
-            let subset = board & this.Position.PiecesBB[side][piece];
-            if (subset) {
-                return { bitboard: subset & -subset, piece };
-            }
-        }
-        return { bitboard: 0n, piece: 0 };
-    }
-
-    /***************************
-     * 
-     * Time Management
-     * 
-     **************************/
-
-    private readonly Timer = {
-        timeleft: -1,
-        increment: 0,
-        depth: this.MaxPly,
-        movestogo: 0,
-        startTime: 0,
-        stopTime: 0,
-        movetime: -1,
-        stop: false,
-        extended: false,
-    }
-
-    StartTimer() {
-        let searchTime = 0;
-        this.Timer.stop = false;
-        this.Timer.extended = false;
-
-        // If infinite time, we don't need to set any time limit on searching
-        if (this.Timer.timeleft === -1 && this.Timer.movetime === -1) {
-            return;
-        }
-
-        // If there are moves left until the next time control, diving the remaining time equally
-        if (this.Timer.movestogo !== 0) {
-            searchTime = this.Timer.timeleft / this.Timer.movestogo;
-        }
-        else if (this.Timer.movetime !== -1) {
-            searchTime = this.Timer.movetime;
-        }
-        else {
-            // Games, on average, take approximately 40 moves to complete
-            let movesleft = 0;
-            if (this.Position.Ply <= 20) {
-                movesleft = 45 - this.Position.Ply;
-            }
-            else {
-                movesleft = 25;
-            }
-
-            searchTime = this.Timer.timeleft / movesleft;
-        }
-
-        searchTime += this.Timer.increment / 2;
-
-        if (searchTime >= this.Timer.timeleft) {
-            searchTime -= this.Timer.increment;
-        }
-
-        if (searchTime <= 0) {
-            searchTime = this.Timer.increment - 1;
-        }
-
-        this.Timer.startTime = Date.now();
-        this.Timer.stopTime = this.Timer.startTime + searchTime;
-    }
-
-    CheckTime() {
-        // Never need to stop if there is no limit on search time
-        if (!this.Timer.stop && this.Timer.timeleft === -1 && this.Timer.movetime === -1) {
-            return;
-        }
-
-        // Search for at least the calculated time limit, but can search longer if extended (up to 75% of the total time left)
-        if (Date.now() > this.Timer.stopTime && (!this.Timer.extended || Date.now() - this.Timer.startTime >= (this.Timer.timeleft * 0.75))) {
-            this.Timer.stop = true;
-        }
-    }
-
-    /***************************
-     * 
-     * UCI
-     * 
-     **************************/
-
-    /**
-     * Parses and loads a "position" command from the GUI
-     * @param command The UCI position command
-     */
-    ParseUCIPosition(command: string) {
-        // given command with start with "position", which we can remove
-        const position = command.split(' ').slice(1).join(' ');
-
-        // apply the position
-        if (position.startsWith("fen")) {
-            this.LoadFEN(position.split(' ').slice(1).join(' '));
-        }
-        else {
-            this.LoadFEN(Khepri.positions.start);
-        }
-
-        // get the moves from the string
-        const moves = position.split('moves ').slice(1).join(' ').split(' ').filter(x => x != "");
-
-        for (let i = 0; i < moves.length; i++) {
-            const move = this.ParseUCIMove(moves[i]);
-
-            if (!move) {
-                console.error('Unable to parse UCI command');
-                console.log(`Command: ${command}`);
-                console.log(`Invalid move: ${moves[i]}`);
-                break;
-            }
-
-            this.MakeMove(move);
-        }
+        return attacked;
     }
 
     /**
-     * Converts an move from the GUI to a move the engine can understand and make
-     * @param move The move in algebraic notation
-     * @returns The move in an engine-recognizable numeric format
+     * Loads an FEN string into the engine
+     * @param fen The FEN string to load
      */
-    ParseUCIMove(move: string) {
-        const fromFile = parseInt(move.charAt(0), 36) - 10;
-        const fromRank = 7 - (parseInt(move.charAt(1)) - 1);
-        const from = (fromRank * 8) + fromFile;
-        const toFile = parseInt(move.charAt(2), 36) - 10;
-        const toRank = 7 - (parseInt(move.charAt(3)) - 1);
-        let to = (toRank * 8) + toFile;
+    LoadFEN(fen: string) {
+        this.BoardState.PiecesBB = new BigUint64Array(12);
+        this.BoardState.OccupanciesBB = new BigUint64Array(2);
+        this.BoardState.CastlingRights = 0;
+        this.BoardState.Squares = new Array(64).fill(undefined);
+        this.BoardState.EnPassSq = Square.no_sq;
+        this.BoardState.Phase = this.PhaseTotal;
+        this.BoardState.CastlingSquaresMask = new Array(64).fill(15);
 
-        const piece = this.Position.Squares[from];
-        let moveType = MoveType.Normal;
-        let promotionType: PromotionType = 0;
+        const pieces = fen.split(" ")[0].split("");
 
-        // If the move has 5 characters, the 5th is a promotion
-        if (move.length === 5) {
-            const promotion = move.charAt(4);
-            moveType = MoveType.Promotion;
+        // Loop over each character in the FEN string
+        // Set bitboards according to characters
+        let square = 0;
+        for (let i = 0; i < pieces.length; i++) {
+            const char = pieces[i];
 
-            // UCI notation does not differentiate between promotions and promotion captures
-            if (promotion === "n") {
-                promotionType = PromotionType.Knight;
-            }
-            else if (promotion === "b") {
-                promotionType = PromotionType.Bishop;
-            }
-            else if (promotion === "r") {
-                promotionType = PromotionType.Rook;
-            }
-            else if (promotion === "q") {
-                promotionType = PromotionType.Queen;
+            switch (char.toLowerCase()) {
+                case "p": case "n": case "b": case "r":case "q": case "k": {
+                    const piece = this.CharToPiece.get(char) as Piece;
+
+                    this.PlacePiece(piece.Type, piece.Color, square);
+                    this.BoardState.Phase -= this.PhaseValues[piece.Type];
+                    square++;
+                    break;
+                }
+                case "1": case "2": case "3": case "4": case "4": case "5": case "6": case "7": case "8": {
+                    square += parseInt(char);
+                    break;
+                }
+                case "/": {
+                    break;
+                }
+                default: {
+                    throw new Error(`Unable to parse FEN character: ${char}`);
+                }
             }
         }
-        // Check if the move was a castling move
-        if (piece.Type === Pieces.King) {
-            // Castling in standard chess always has the same strings...
-            if (!this.isChess960 && (move === "e1g1" || move === "e1c1" || move === "e8g8" || move === "e8c8")) {
-                moveType = MoveType.Castle;
-                const kingSide = to > from;
-                to = (kingSide ? Square.h1 : Square.a1) ^ (piece.Color * 56);
+
+        // Set the side to move
+        this.BoardState.SideToMove = fen.split(' ')[1] === 'w' ? Color.White : Color.Black;
+
+        // Set castling rights
+        const castling = fen.split(' ')[2].split('');
+        for (const castle of castling) {
+            const side = castle.toUpperCase() === castle ? Color.White : Color.Black;
+            const kingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (side * 6)]);
+            this.BoardState.CastlingSquaresMask[kingSquare] = side === Color.White ? 12 : 3;
+
+            if (castle.toUpperCase() === "K") {
+                const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i > kingSquare);
+
+                if (side === Color.White) {
+                    this.BoardState.CastlingRights |= CastlingRights.WhiteKingside;
+                    this.BoardState.CastlingPaths[CastlingRights.WhiteKingside] = (this.betweenMasks[kingSquare][Square.g1] | this.betweenMasks[rookSquare][Square.f1]) & ~(this.BoardState.PiecesBB[PieceType.King + (side * 6)] | this.SetBit(0n, rookSquare));
+                    this.BoardState.CastlingRookSquares[CastlingRights.WhiteKingside] = rookSquare;
+                    this.BoardState.CastlingSquaresMask[rookSquare] = 14;
+                }
+                else {
+                    this.BoardState.CastlingRights |= CastlingRights.BlackKingside;
+                    this.BoardState.CastlingPaths[CastlingRights.BlackKingside] = (this.betweenMasks[kingSquare][Square.g8] | this.betweenMasks[rookSquare][Square.f8]) & ~(this.BoardState.PiecesBB[PieceType.King + (side * 6)] | this.SetBit(0n, rookSquare));
+                    this.BoardState.CastlingRookSquares[CastlingRights.BlackKingside] = rookSquare;
+                    this.BoardState.CastlingSquaresMask[rookSquare] = 11;
+                }
             }
-            // Chess960 is a little more hard to parse. We have to check if the move is to the rook square and the side still has castling rights.
-            else if (
-                (to === this.Position.CastlingRookSquares[CastlingRights.WhiteKingside] && this.Position.CastlingRights & CastlingRights.WhiteKingside)
-                || (to === this.Position.CastlingRookSquares[CastlingRights.BlackKingside] && this.Position.CastlingRights & CastlingRights.BlackKingside)
-                || (to === this.Position.CastlingRookSquares[CastlingRights.WhiteQueenside] && this.Position.CastlingRights & CastlingRights.WhiteQueenside)
-                || (to === this.Position.CastlingRookSquares[CastlingRights.BlackQueenside] && this.Position.CastlingRights & CastlingRights.BlackQueenside)
-            ) {
-                moveType = MoveType.Castle;
+            else if (castle.toUpperCase() === "Q") {
+                const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i < kingSquare);
+
+                if (side === Color.White) {
+                    this.BoardState.CastlingRights |= CastlingRights.WhiteQueenside;
+                    this.BoardState.CastlingPaths[CastlingRights.WhiteQueenside] = (this.betweenMasks[kingSquare][Square.c1] | this.betweenMasks[rookSquare][Square.d1]) & ~(this.BoardState.PiecesBB[PieceType.King + (side * 6)] | this.SetBit(0n, rookSquare));
+                    this.BoardState.CastlingRookSquares[CastlingRights.WhiteQueenside] = rookSquare;
+                    this.BoardState.CastlingSquaresMask[rookSquare] = 13;
+                }
+                else {
+                    this.BoardState.CastlingRights |= CastlingRights.BlackQueenside;
+                    this.BoardState.CastlingPaths[CastlingRights.BlackQueenside] = (this.betweenMasks[kingSquare][Square.c8] | this.betweenMasks[rookSquare][Square.d8]) & ~(this.BoardState.PiecesBB[PieceType.King + (side * 6)] | this.SetBit(0n, rookSquare));
+                    this.BoardState.CastlingRookSquares[CastlingRights.BlackQueenside] = rookSquare;
+                    this.BoardState.CastlingSquaresMask[rookSquare] = 7;
+                }
+            }
+            // Shredder-FEN castling notation for Chess960
+            else if (castle.toUpperCase() >= "A" && castle.toUpperCase() <= "H") {
+                // Kingside castle
+                if (castle.toUpperCase().charCodeAt(0) - 65 > (kingSquare & 7)) {
+                    const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i > kingSquare);
+
+                    if (side === Color.White) {
+                        this.BoardState.CastlingRights |= CastlingRights.WhiteKingside;
+                        this.BoardState.CastlingPaths[CastlingRights.WhiteKingside] = (this.betweenMasks[kingSquare][Square.g1] | this.betweenMasks[rookSquare][Square.f1] | this.squareBB[Square.g1] | this.squareBB[Square.f1]) & ~(this.BoardState.PiecesBB[PieceType.King + (side * 6)] | this.SetBit(0n, rookSquare));
+                        this.BoardState.CastlingRookSquares[CastlingRights.WhiteKingside] = rookSquare;
+                        this.BoardState.CastlingSquaresMask[rookSquare] = 14;
+                    }
+                    else {
+                        this.BoardState.CastlingRights |= CastlingRights.BlackKingside;
+                        this.BoardState.CastlingPaths[CastlingRights.BlackKingside] = (this.betweenMasks[kingSquare][Square.g8] | this.betweenMasks[rookSquare][Square.f8] | this.squareBB[Square.g8] | this.squareBB[Square.f8]) & ~(this.BoardState.PiecesBB[PieceType.King + (side * 6)] | this.SetBit(0n, rookSquare));
+                        this.BoardState.CastlingRookSquares[CastlingRights.BlackKingside] = rookSquare;
+                        this.BoardState.CastlingSquaresMask[rookSquare] = 11;
+                    }
+                }
+                // Queenside castle
+                else {
+                    if (side === Color.White) {
+                        const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i >= 56 && i < kingSquare);
+                        this.BoardState.CastlingRights |= CastlingRights.WhiteQueenside;
+                        this.BoardState.CastlingPaths[CastlingRights.WhiteQueenside] = (this.betweenMasks[kingSquare][Square.c1] | this.betweenMasks[rookSquare][Square.d1] | this.squareBB[Square.c1] | this.squareBB[Square.d1]) & ~(this.BoardState.PiecesBB[PieceType.King + (side * 6)] | this.SetBit(0n, rookSquare));
+                        this.BoardState.CastlingRookSquares[CastlingRights.WhiteQueenside] = rookSquare;
+                        this.BoardState.CastlingSquaresMask[rookSquare] = 13;
+                    }
+                    else {
+                        const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i < kingSquare);
+                        this.BoardState.CastlingRights |= CastlingRights.BlackQueenside;
+                        this.BoardState.CastlingPaths[CastlingRights.BlackQueenside] = (this.betweenMasks[kingSquare][Square.c8] | this.betweenMasks[rookSquare][Square.d8] | this.squareBB[Square.c8] | this.squareBB[Square.d8]) & ~(this.BoardState.PiecesBB[PieceType.King + (side * 6)] | this.SetBit(0n, rookSquare));
+                        this.BoardState.CastlingRookSquares[CastlingRights.BlackQueenside] = rookSquare;
+                        this.BoardState.CastlingSquaresMask[rookSquare] = 7;
+                    }
+                }
             }
         }
-        // If en passant capture
-        else if (to === this.Position.EnPassSq && piece.Type === Pieces.Pawn) {
-            moveType = MoveType.EnPassant;
+
+        // Set the en passant square
+        const enpassant = fen.split(' ')[3];
+        if (enpassant !== '-') {
+            const files = 'abcdefgh';
+            const file = files.indexOf(enpassant.split('')[0]);
+            const rank = 8 - parseInt(enpassant[1], 10);
+            const enPSquare = rank * 8 + file;
+
+            // Only set the en passant square if an opponent pawn can make that move
+            this.BoardState.EnPassSq = enPSquare;
         }
-        
-        return this.EncodeMove(from, to, moveType, promotionType);
+
+        // Set the game ply. If ply is not set in FEN, set it to 0
+        this.BoardState.Ply = parseInt(fen.split(' ')[5]) * 2 || 0;
+        // Ply is only incremented after black's move,
+        // so if it's black's turn, we have to decrease by 1
+        if (this.BoardState.SideToMove === Color.Black) {
+            this.BoardState.Ply--;
+        }
+
+        // Set the halfmove clock
+        this.BoardState.HalfMoves = parseInt(fen.split(' ')[4]) || 0;
+
+        // Generate the hashes for the position
+        const { hash, pawnHash } = this.GenerateHashes();
+        this.BoardState.Hash = hash;
+        this.BoardState.PawnHash = pawnHash;
+
+        // this.PositionHistory.length = 0;
+        // this.PositionHistory[0] = this.BoardState.Hash;
+
+        // this.KingSquares[0] = 0;
+        // this.KingSquares[1] = 0;
+    }
+
+    PrintBitboard(board: bigint) {
+        for (let r = 0; r < 8; r++) {
+            let rank = '';
+            for (let f = 0; f < 8; f++) {
+            const square = r * 8 + f;
+
+            if (!f) {
+                rank += `${8 - r}  `;
+            }
+
+            rank += ` ${this.GetBit(board, square) ? '1' : '0'}`;
+            }
+            console.log(`${rank} \r\n`);
+        }
+
+        console.log('\r\n    a b c d e f g h');
+        console.log(`    Bitboard: ${board}`);
     }
 
     /**
-     * Parse the "go" command from the GUI to begin searching the position
-     * @param command The UCI command
-     * @returns The principal variation and best move
+     * Prints a graphical representation of the current board position to the console
      */
-    ParseUCIGo(command: string) {
-        const commands = command.split(" ");
-        const sidePrefix = this.Position.SideToMove === Color.White ? "w" : "b";
+    PrintBoard() {
+        const unicode = [ ["♙", "♘", "♗", "♖", "♕", "♔"], ["♟︎", "♞", "♝", "♜", "♛", "♚"] ];
+        for (let rank = 0; rank < 8; rank++) {
+            let r = "";
+            for (let file = 0; file < 8; file++) {
+                let square = rank * 8 + file;
+                let piece = this.BoardState.Squares[square] ?? null;
 
-        let timeleft = -1; // negative value indicates infinite time
-        let increment = 0;
-        let movestogo = 0;
-        let movetime = -1; // -1 is infinite
-        let depth = this.MaxPly;
+                if (!file) {
+                    r += `${8 - rank} `;
+                }
 
-        for (let i = 0; i < commands.length; i++) {
-            const command = commands[i];
-
-            if (command === sidePrefix + "time") {
-                timeleft = parseInt(commands[i + 1]);
+                if (piece) {
+                    r += ` ${unicode[piece.Color][piece.Type]}`;
+                }
+                else {
+                    r += ' . ';
+                }
             }
-            else if (command === sidePrefix + "inc") {
-                increment = parseInt(commands[i + 1]);
-            }
-            else if (command === "movestogo") {
-                movestogo = parseInt(commands[i + 1]);
-            }
-            else if (command === "depth") {
-                // set depth to UCI value, unless it is greater than the max ply
-                depth = Math.min(parseInt(commands[i + 1]), this.MaxPly);
-            }
-            else if (command === "movetime") {
-                movetime = parseInt(commands[i + 1]);
-            }
+            console.log(`${r} \r\n`);
         }
-
-        // Set the engine's timer values to values from the UCI command
-        this.Timer.timeleft = timeleft;
-        this.Timer.increment = increment;
-        this.Timer.depth = depth;
-        this.Timer.movestogo = movestogo;
-        this.Timer.movetime = movetime;
-
-        return this.Search(depth);
+        console.log('\r\n   a  b  c  d  e  f  g  h');
+        console.log(`Side to move: ${this.BoardState.SideToMove === Color.White ? 'white' : 'black'}`);
+        console.log(`En passant: ${this.BoardState.EnPassSq !== Square.no_sq ? Square[this.BoardState.EnPassSq] : "no"}`);
+        console.log(`Castling rights: ${this.BoardState.CastlingRights & CastlingRights.WhiteKingside ? 'K' : '-'}${this.BoardState.CastlingRights & CastlingRights.WhiteQueenside ? 'Q' : '-'}${this.BoardState.CastlingRights & CastlingRights.BlackKingside ? 'k' : '-'}${this.BoardState.CastlingRights & CastlingRights.BlackQueenside ? 'q' : '-'}`);
+        console.log(`Plies: ${this.BoardState.Ply}`);
     }
 
-    /***************************
+    /****************************
      * 
-     * Tests
-     * 
-     **************************/
+     *       Perft Tests
+     *
+     ****************************/
 
     private totalNodes = 0;
 
@@ -3005,7 +1616,7 @@ class Khepri {
                 let nodes = this.PerftDriver(depth - 1);
     
                 if (printNodes) {
-                    console.log(`${this.PrettyPrintMove(move)}: ${nodes}`);
+                    console.log(`${this.MoveToString(move)}: ${nodes}`);
                 }
             }
     
@@ -3014,7 +1625,7 @@ class Khepri {
     
         const end = performance.now();
         if (printNodes) {
-            console.log(`Nodes: ${this.totalNodes.toLocaleString()}. Time taken: ${end - start}`);
+            console.log(`Nodes: ${this.totalNodes.toLocaleString()}. nps: ${Math.round((this.totalNodes * 1000 / (end-start))).toLocaleString()}. Total time taken: ${end - start} ms`);
         }
     
         return this.totalNodes;
