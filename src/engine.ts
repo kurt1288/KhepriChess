@@ -42,7 +42,6 @@ enum Direction {
     SOUTHWEST = -7,
 }
 
-// Moves types as defined at https://www.chessprogramming.org/Encoding_Moves
 const enum MoveType {
     Capture,
     Promotion,
@@ -51,10 +50,16 @@ const enum MoveType {
 }
 
 const enum PromotionType {
-    Knight = 1,
+    Knight,
     Bishop,
     Rook,
     Queen,
+}
+
+const enum HashFlag {
+    Exact,
+    Alpha,
+    Beta,
 }
 
 /**
@@ -98,6 +103,14 @@ interface Zobrist {
     EnPassant: BigUint64Array
     Castle: BigUint64Array
     SideToMove: bigint
+}
+
+interface TTEntry {
+    Hash: bigint // 8 bytes
+    Move: number // 2 bytes
+    Depth: number // 1 bytes
+    Score: number // 2 bytes
+    Flag: HashFlag // 1 byte
 }
 
 class Khepri {
@@ -1019,6 +1032,46 @@ class Khepri {
         return moveList;
     }
 
+    SortMoves(moves: number[], ttMove: number) {
+        let scored = [];
+
+        for (let i = 0; i < moves.length; i++) {
+            const move = moves[i];
+            const moveType = (move & 0x3f80) >> 12;
+
+            if (move === ttMove) {
+                scored.push({ move: ttMove, score: this.INFINITY }); // ttMove should be scored highest so that it's played first
+            }
+            else if (moveType === MoveType.Capture || moveType === MoveType.EnPassant) {
+                const movingPiece = this.BoardState.Squares[move & 0x3f] as Piece;
+                const capturedPiece = this.BoardState.Squares[(move & 0xfc0) >> 6] ?? { Type: PieceType.Pawn, Color: Color.White }; // if the piece from the squares is null, that means it's an en passant capture
+
+                scored.push({ move, score: this.MGPieceValue[capturedPiece.Type] - movingPiece.Type });
+            }
+            else {
+                scored.push({ move, score: Math.random() }); // random sorting for quiet moves, just because
+            }
+        }
+
+        return scored;
+    }
+
+    NextMove(moves: { move: number, score: number }[], index: number) {
+        let best = index;
+
+        for (let i = index; i < moves.length; i++) {
+            if (moves[i].score > moves[best].score) {
+                best = i;
+            }
+        }
+
+        const temp = moves[index];
+        moves[index] = moves[best];
+        moves[best] = temp;
+
+        return moves[index++];
+    }
+
     AttacksToByColor(square: Square, color: Color) {
         const pawns = this.BoardState.PiecesBB[PieceType.Pawn + (6 * color)] & this.PawnAttacks[square + (64 * (color ^ 1))];
         const knights = this.BoardState.PiecesBB[PieceType.Knight + (6 * color)] & this.KnightAttacks[square];
@@ -1383,6 +1436,217 @@ class Khepri {
         }
 
         return attacked;
+    }
+
+    /****************************
+     * 
+     *    Transposition Table
+     *
+     ****************************/
+
+    // Default to a 32 MB hash table. Calculate how many 16-byte entries can fit
+    TranspositionTables: TTEntry[] = Array((32 * 1024 * 1024) / 16).fill(null);
+    TTSize = BigInt((32 * 1024 * 1024) / 16); // as bigint for faster/easier operations against hashes
+
+    ResiseTranspositionTable() {
+
+    }
+
+    /**
+     * Store an entry in the transposition table. Collisions are simply always replaced
+     */
+    StoreEntry(hash: bigint, depth: number, move: number, score: number, flag: HashFlag) {
+        this.TranspositionTables[Number(hash % this.TTSize)] = {
+            Hash: hash,
+            Move: move,
+            Depth: depth,
+            Score: score,
+            Flag: flag,
+        };
+    }
+
+    GetEntry(hash: bigint): TTEntry | false {
+        const entry = this.TranspositionTables[Number(hash % this.TTSize)];
+
+        if (entry && entry.Hash !== hash) {
+            return false;
+        }
+
+        return entry;
+    }
+
+    /****************************
+     * 
+     *        Evaluation
+     *
+     ****************************/
+
+    readonly MGPieceValue = [100, 300, 350, 500, 1000, 15000];
+
+    Evaluate() {
+        let mg = [0, 0];
+
+        // piece values
+        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Pawn]) * this.MGPieceValue[PieceType.Pawn];
+        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Knight]) * this.MGPieceValue[PieceType.Knight];
+        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Bishop]) * this.MGPieceValue[PieceType.Bishop];
+        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Rook]) * this.MGPieceValue[PieceType.Rook];
+        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Queen]) * this.MGPieceValue[PieceType.Queen];
+        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Pawn + 6]) * this.MGPieceValue[PieceType.Pawn];
+        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Knight + 6]) * this.MGPieceValue[PieceType.Knight];
+        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Bishop + 6]) * this.MGPieceValue[PieceType.Bishop];
+        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Rook + 6]) * this.MGPieceValue[PieceType.Rook];
+        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Queen + 6]) * this.MGPieceValue[PieceType.Queen];
+
+        return mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1];
+    }
+
+    /****************************
+     * 
+     *          Search
+     *
+     ****************************/
+    private readonly INFINITY = 50000;
+    private readonly MAXPLY = 100;
+    private nodesSearched = 0;
+    private pvArray: number[][] = Array(this.MAXPLY).fill(0).map(() => Array(this.MAXPLY).fill(0));
+    private pvLength = Array(this.MAXPLY).fill(0);
+
+    GetPv() {
+        let pv = "";
+
+        for (let i = 0; i < this.pvLength[0]; i++) {
+            pv += this.MoveToString(this.pvArray[0][i]) + " ";
+        }
+    
+        return pv;
+    }
+
+    UpdatePv(move: number) {
+        this.pvArray[this.BoardState.Ply][this.BoardState.Ply] = move;
+        for (let i = this.BoardState.Ply + 1; i < this.pvLength[this.BoardState.Ply + 1]; i++) {
+            this.pvArray[this.BoardState.Ply][i] = this.pvArray[this.BoardState.Ply + 1][i];
+        }
+        this.pvLength[this.BoardState.Ply] = this.pvLength[this.BoardState.Ply + 1];
+    }
+
+    Search(targetDepth: number) {
+        let alpha = -this.INFINITY;
+        let beta = this.INFINITY;
+        let score = -this.INFINITY;
+        const startTime = Date.now();
+
+        // reset pv table
+        this.pvArray = Array(this.MAXPLY).fill(0).map(() => Array(this.MAXPLY).fill(0));
+        this.pvLength = Array(this.MAXPLY).fill(0);
+
+        this.nodesSearched = 0;
+
+        // Iterative deepening
+        for (let depth = 1; depth <= targetDepth; depth++) {
+            let margin = 10;
+
+            // Use aspiration windows at higher depths
+            if (depth >= 5) {
+                alpha = Math.max(score - margin, -this.INFINITY);
+                beta = Math.min(score + margin, this.INFINITY);
+            }
+
+            while (true) {
+                score = this.NegaScout(alpha, beta, depth);
+
+                // Adjust the aspiration window depending on whether the search failed high or low, or break from the loop if it didn't.
+                if (score <= alpha) {
+                    alpha = Math.max(score - margin, -this.INFINITY);
+                    beta = (alpha + beta) / 2;
+                }
+                else if (score >= beta) {
+                    beta = Math.min(score + margin, this.INFINITY);
+                }
+                else {
+                    break;
+                }
+
+                margin += margin / 2;
+            }
+
+            const endTime = Date.now();
+
+            console.log(`info depth ${depth} score ${score} nodes ${this.nodesSearched} nps ${(this.nodesSearched * 1000) / (endTime - startTime) | 0} time ${endTime - startTime} pv ${this.GetPv()}`);
+        }
+
+        console.log(`bestmove ${this.MoveToString(this.pvArray[0][0])}`);
+    }
+
+    NegaScout(alpha: number, beta: number, depth: number) {
+        this.nodesSearched++;
+        this.pvLength[this.BoardState.Ply] = this.BoardState.Ply;
+
+        if (depth <= 0) {
+            return this.Evaluate();
+        }
+
+        const isPVNode = beta - alpha > 1;
+        let hashFlag = HashFlag.Alpha;
+        let bestScore = -this.INFINITY;
+        let bestMove = 0;
+        let b = beta;
+        let ttMove = 0;
+
+        if (!isPVNode) {
+            const entry = this.GetEntry(this.BoardState.Hash);
+
+            if (entry && entry.Depth >= depth && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
+                return entry.Score;
+            }
+
+            // If the entry doesn't contain a valid score to return, we can still use the move for move ordering
+            if (entry) {
+                ttMove = entry.Move;
+            }
+        }
+
+        const moves = this.SortMoves(this.GenerateMoves(), ttMove);
+
+        for (let i = 0; i < moves.length; i++) {
+            // const move = moves[i];
+            const move = this.NextMove(moves, i).move;
+
+            if (!this.MakeMove(move)) {
+                this.UnmakeMove(move);
+                continue;
+            }
+
+            let score = -this.NegaScout(-b, -alpha, depth - 1);
+
+            if ((score > alpha) && (score < beta) && (i > 1)) {
+                score = -this.NegaScout(-beta, -alpha, depth - 1);
+            }
+
+            this.UnmakeMove(move);
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestMove = move;
+            }
+
+            if (score > alpha) {
+                alpha = score;
+                hashFlag = HashFlag.Exact;
+                this.UpdatePv(move);
+            }
+
+            if (alpha >= beta) {
+                this.StoreEntry(this.BoardState.Hash, depth, bestMove, bestScore, HashFlag.Beta);
+                return alpha;
+            }
+
+            b = alpha + 1;
+        }
+
+        this.StoreEntry(this.BoardState.Hash, depth, bestMove, bestScore, hashFlag);
+        
+        return alpha;
     }
 
     /**
