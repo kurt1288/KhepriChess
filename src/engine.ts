@@ -42,18 +42,28 @@ enum Direction {
     SOUTHWEST = -7,
 }
 
-const enum MoveType {
-    Capture,
-    Promotion,
-    EnPassant,
-    Castle,
+const enum MoveFlag {
+    Promotion = 8,
+    Capture = 4,
+    Special_1 = 2,
+    Special_0 = 1,
 }
 
-const enum PromotionType {
-    Knight,
-    Bishop,
-    Rook,
-    Queen,
+const enum MoveType {
+    Quiet,
+    DoublePawnPush,
+    KingCastle,
+    QueenCastle,
+    Capture,
+    EPCapture,
+    KnightPromotion = 8,
+    BishopPromotion,
+    RookPromotion,
+    QueenPromotion,
+    KnightPromotionCapture,
+    BishopPromotionCapture,
+    RookPromotionCapture,
+    QueenPromotionCapture,
 }
 
 const enum HashFlag {
@@ -263,12 +273,26 @@ class Khepri {
         11n, 10n, 10n, 10n, 10n, 10n, 10n, 11n, 
         12n, 11n, 11n, 11n, 11n, 11n, 11n, 12n,
     ];
+
+    private PRNG_SEED = 192085716n;
     
     /**
      * Generates a random 64-bit number
+     * see https://vigna.di.unimi.it/ftp/papers/xorshift.pdf
      */
     Random64() {
-        return crypto.getRandomValues(new BigUint64Array(1))[0];
+        let s = this.PRNG_SEED;
+
+        s ^= s >> 12n;
+        s ^= s << 25n;
+        s ^= s >> 27n;
+
+        this.PRNG_SEED = s;
+
+        return BigInt.asUintN(64, s * 2685821657736338717n);
+
+        // generate "actual" random numbers (unseedable)
+        // return crypto.getRandomValues(new BigUint64Array(1))[0];
     }
 
     /**
@@ -345,8 +369,8 @@ class Khepri {
 
     /** Count the number of set bits on the board */
     CountBits(bitboard: bigint) {
-        // // From https://graphics.stanford.edu/~seander/bithacks.html
-        // // This appeared to be the fastest
+        // From https://graphics.stanford.edu/~seander/bithacks.html
+        // This appeared to be the fastest
         const left32 = Number(bitboard & 0xffffffffn);
         const right32 = Number(bitboard >> 32n);
 
@@ -780,12 +804,63 @@ class Khepri {
      *
      ****************************/
 
-    EncodeMove(from: Square, to: Square, type: MoveType, promotionType = PromotionType.Knight) {
-        return from | (to << 6) | (type << 12) | (promotionType << 14);
+    EncodeMove(from: Square, to: Square, type: MoveType) {
+        return ((type & 0xf) << 12) | ((from & 0x3f) << 6) | (to & 0x3f);
     }
 
-    EncodeMoveQuiet(from: Square, to: Square) {
-        return from | (to << 6);
+    MoveType(move: number): MoveType {
+        return (move >> 12) & 0x0f;
+    }
+
+    HasFlag(move: number, flag: MoveFlag) {
+        return ((move >> 12) & flag) !== 0;
+    }
+
+    IsCapture(move: number) {
+        return (move & MoveFlag.Capture) !== 0;
+    }
+
+    IsPromotion(move: number) {
+        return (move & MoveFlag.Promotion) !== 0;
+    }
+
+    MoveTo(move: number) {
+        return move & 0x3f;
+    }
+
+    MoveFrom(move: number) {
+        return (move >> 6) & 0x3f;
+    }
+
+    IsCastle(move: number) {
+        return this.MoveType(move) === MoveType.KingCastle || this.MoveType(move) === MoveType.QueenCastle;
+    }
+
+    StringifyMove(move: number) {
+        const from = this.MoveFrom(move);
+        let to = this.MoveTo(move);
+        const type = this.MoveType(move);
+
+        if (this.IsCastle(move) && !this.isChess960) {
+            to = to > from ? to - 1 : to + 2;
+        }
+
+        let prettymove = `${Square[from]}${Square[to]}`;
+        if (this.HasFlag(move, MoveFlag.Promotion)) {
+            if (type === MoveType.KnightPromotion || type === MoveType.KnightPromotionCapture) {
+                prettymove += "n";
+            }
+            if (type === MoveType.BishopPromotion || type === MoveType.BishopPromotionCapture) {
+                prettymove += "b";
+            }
+            if (type === MoveType.RookPromotion || type === MoveType.RookPromotionCapture) {
+                prettymove += "r";
+            }
+            if (type === MoveType.QueenPromotion || type === MoveType.QueenPromotionCapture) {
+                prettymove += "q";
+            }
+        }
+        return prettymove;
     }
 
     GenerateBishopAttacks(occupancy: bigint, square: Square) {
@@ -836,13 +911,13 @@ class Khepri {
             while (push) {
                 const toSquare = this.GetLS1B(push);
                 push = this.RemoveBit(push, toSquare);
-                moves.push(this.EncodeMoveQuiet(toSquare + up, toSquare));
+                moves.push(this.EncodeMove(toSquare + up, toSquare, MoveType.Quiet));
             }
 
             while (doublePush) {
                 const toSquare = this.GetLS1B(doublePush);
                 doublePush = this.RemoveBit(doublePush, toSquare);
-                moves.push(this.EncodeMoveQuiet(toSquare + (2 * up), toSquare));
+                moves.push(this.EncodeMove(toSquare + (2 * up), toSquare, MoveType.Quiet));
             }
         }
 
@@ -857,10 +932,10 @@ class Khepri {
             // attacks to promotion
             if ((side === Color.White && (toSquare <= Square.h8)) || (side === Color.Black && (toSquare >= Square.a1))) {
                 moves.push(
-                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.Promotion, PromotionType.Knight),
-                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.Promotion, PromotionType.Bishop),
-                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.Promotion, PromotionType.Rook),
-                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.Promotion, PromotionType.Queen),
+                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.KnightPromotionCapture),
+                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.BishopPromotionCapture),
+                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.RookPromotionCapture),
+                    this.EncodeMove(toSquare + upRight, toSquare, MoveType.QueenPromotionCapture),
                 );
             }
             else {
@@ -876,10 +951,10 @@ class Khepri {
             // attacks to promotion
             if ((side === Color.White && (toSquare <= Square.h8)) || (side === Color.Black && (toSquare >= Square.a1))) {
                 moves.push(
-                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.Promotion, PromotionType.Knight),
-                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.Promotion, PromotionType.Bishop),
-                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.Promotion, PromotionType.Rook),
-                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.Promotion, PromotionType.Queen),
+                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.KnightPromotionCapture),
+                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.BishopPromotionCapture),
+                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.RookPromotionCapture),
+                    this.EncodeMove(toSquare + upLeft, toSquare, MoveType.QueenPromotionCapture),
                 );
             }
             else {
@@ -895,10 +970,10 @@ class Khepri {
             promotions = this.RemoveBit(promotions, toSquare);
 
             moves.push(
-                this.EncodeMove(toSquare + up, toSquare, MoveType.Promotion, PromotionType.Knight),
-                this.EncodeMove(toSquare + up, toSquare, MoveType.Promotion, PromotionType.Bishop),
-                this.EncodeMove(toSquare + up, toSquare, MoveType.Promotion, PromotionType.Rook),
-                this.EncodeMove(toSquare + up, toSquare, MoveType.Promotion, PromotionType.Queen),
+                this.EncodeMove(toSquare + up, toSquare, MoveType.KnightPromotion),
+                this.EncodeMove(toSquare + up, toSquare, MoveType.BishopPromotion),
+                this.EncodeMove(toSquare + up, toSquare, MoveType.RookPromotion),
+                this.EncodeMove(toSquare + up, toSquare, MoveType.QueenPromotion),
             );
         }
 
@@ -912,14 +987,14 @@ class Khepri {
                 const toSquare = this.GetLS1B(right);
                 right = this.RemoveBit(right, toSquare);
 
-                moves.push(this.EncodeMove(toSquare + upRight, toSquare, MoveType.EnPassant));
+                moves.push(this.EncodeMove(toSquare + upRight, toSquare, MoveType.EPCapture));
             }
 
             while (left) {
                 const toSquare = this.GetLS1B(left);
                 left = this.RemoveBit(left, toSquare);
 
-                moves.push(this.EncodeMove(toSquare + upLeft, toSquare, MoveType.EnPassant));
+                moves.push(this.EncodeMove(toSquare + upLeft, toSquare, MoveType.EPCapture));
             }
         }
 
@@ -982,7 +1057,7 @@ class Khepri {
                 while (quietMoves) {
                     const toSquare = this.GetLS1B(quietMoves);
                     quietMoves = this.RemoveBit(quietMoves, toSquare);
-                    moveList.push(this.EncodeMoveQuiet(square, toSquare));
+                    moveList.push(this.EncodeMove(square, toSquare, MoveType.Quiet));
                 }
             }
     
@@ -1004,26 +1079,26 @@ class Khepri {
                     if (this.BoardState.CastlingRights & CastlingRights.WhiteKingside
                         && ((this.BoardState.CastlingPaths[CastlingRights.WhiteKingside] & occupied) === 0n)
                         && !this.IsPathAttacked(this.betweenMasks[kingSquare][Square.h1])) {
-                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.WhiteKingside], MoveType.Castle));
+                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.WhiteKingside], MoveType.KingCastle));
                     }
 
                     if (this.BoardState.CastlingRights & CastlingRights.WhiteQueenside
                         && ((this.BoardState.CastlingPaths[CastlingRights.WhiteQueenside] & occupied) === 0n)
                         && !this.IsPathAttacked(this.betweenMasks[kingSquare][Square.c1])) {
-                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.WhiteQueenside], MoveType.Castle));
+                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.WhiteQueenside], MoveType.QueenCastle));
                     }
                 }
                 else {
                     if (this.BoardState.CastlingRights & CastlingRights.BlackKingside
                         && ((this.BoardState.CastlingPaths[CastlingRights.BlackKingside] & occupied) === 0n)
                         && !this.IsPathAttacked(this.betweenMasks[kingSquare][Square.h8])) {
-                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.BlackKingside], MoveType.Castle));
+                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.BlackKingside], MoveType.KingCastle));
                     }
 
                     if (this.BoardState.CastlingRights & CastlingRights.BlackQueenside
                         && ((this.BoardState.CastlingPaths[CastlingRights.BlackQueenside] & occupied) === 0n)
                         && !this.IsPathAttacked(this.betweenMasks[kingSquare][Square.c8])) {
-                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.BlackQueenside], MoveType.Castle));
+                            moveList.push(this.EncodeMove(kingSquare, this.BoardState.CastlingRookSquares[CastlingRights.BlackQueenside], MoveType.QueenCastle));
                     }
                 }
             }
@@ -1037,22 +1112,22 @@ class Khepri {
 
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
-            const moveType = (move & 0x3f80) >> 12;
 
             if (move === ttMove) {
                 scored.push({ move: ttMove, score: this.INFINITY }); // ttMove should be scored highest so that it's played first
             }
-            else if (moveType === MoveType.Capture || moveType === MoveType.EnPassant) {
-                const movingPiece = this.BoardState.Squares[move & 0x3f] as Piece;
-                const capturedPiece = this.BoardState.Squares[(move & 0xfc0) >> 6] ?? { Type: PieceType.Pawn, Color: Color.White }; // if the piece from the squares is null, that means it's an en passant capture
+            else if (this.IsCapture(move)) {
+                const movingPiece = this.BoardState.Squares[this.MoveFrom(move)] as Piece;
+                const capturedPiece = this.BoardState.Squares[this.MoveTo(move)] ?? { Type: PieceType.Pawn, Color: Color.White }; // if the piece from the squares is null, that means it's an en passant capture
 
                 scored.push({ move, score: this.MGPieceValue[capturedPiece.Type] - movingPiece.Type });
             }
             else {
-                scored.push({ move, score: Math.random() }); // random sorting for quiet moves, just because
+                scored.push({ move, score: 0 }); // random sorting for quiet moves, just because
             }
         }
 
+        // return scored.sort((a, b) => b.score - a.score);
         return scored;
     }
 
@@ -1221,11 +1296,11 @@ class Khepri {
      * @returns False if the move is illegal (leaves the king in check), otherwise true
      */
     MakeMove(move: number) {
-        const from = move & 0x3f;
-        const to = (move & 0xfc0) >> 6;
-        const moveType = (move & 0x3f80) >> 12;
+        const from = this.MoveFrom(move);
+        const to = this.MoveTo(move);
+        const moveType = this.MoveType(move);
         const piece = this.BoardState.Squares[from] as Piece;
-        let captured = moveType === MoveType.EnPassant ? { Type: PieceType.Pawn, Color: this.BoardState.SideToMove ^ 1 } : this.BoardState.Squares[to];
+        let captured = moveType === MoveType.EPCapture ? { Type: PieceType.Pawn, Color: this.BoardState.SideToMove ^ 1 } : this.BoardState.Squares[to];
 
         this.boardStates.push({
             CastlingRights: this.BoardState.CastlingRights,
@@ -1246,7 +1321,7 @@ class Khepri {
             this.BoardState.EnPassSq = Square.no_sq;
         }
 
-        if (moveType === MoveType.Castle) {
+        if (this.IsCastle(move)) {
             this.DoCastle(piece, from, to);
         }
         else {
@@ -1254,7 +1329,7 @@ class Khepri {
             if (captured !== undefined) {
                 let captureSquare = to;
     
-                if (moveType === MoveType.EnPassant) {
+                if (moveType === MoveType.EPCapture) {
                     captureSquare = to + up;
                 }
     
@@ -1278,8 +1353,31 @@ class Khepri {
                 this.BoardState.HalfMoves = 0;
                 this.BoardState.PawnHash ^= this.Zobrist.Pieces[piece.Color][piece.Type][from] ^ this.Zobrist.Pieces[piece.Color][piece.Type][to];
     
-                if (moveType === MoveType.Promotion) {
-                    const promotionType: Piece = { Type: move >> 14, Color: piece.Color };
+                if (this.HasFlag(move, MoveFlag.Promotion)) {
+                    let promotionPiece = 0;
+                    switch (moveType) {
+                        case MoveType.KnightPromotion:
+                        case MoveType.KnightPromotionCapture: {
+                            promotionPiece = PieceType.Knight;
+                            break;
+                        }
+                        case MoveType.BishopPromotion:
+                        case MoveType.BishopPromotionCapture: {
+                            promotionPiece = PieceType.Bishop;
+                            break;
+                        }
+                        case MoveType.RookPromotion:
+                        case MoveType.RookPromotionCapture: {
+                            promotionPiece = PieceType.Rook;
+                            break;
+                        }
+                        case MoveType.QueenPromotion:
+                        case MoveType.QueenPromotionCapture: {
+                            promotionPiece = PieceType.Queen;
+                            break;
+                        }
+                    }
+                    const promotionType: Piece = { Type: promotionPiece, Color: piece.Color };
                     this.RemovePiece(piece.Type, piece.Color, to);
                     this.PlacePiece(promotionType.Type, promotionType.Color, to);
                     this.BoardState.Phase += this.PhaseValues[PieceType.Pawn];
@@ -1328,15 +1426,14 @@ class Khepri {
         // Flip the side to move
         this.BoardState.SideToMove ^= 1;
 
-        const from = move & 0x3f;
-        const to = (move & 0xfc0) >> 6;
-        const moveType = (move & 0x3f80) >> 12;
+        const from = this.MoveFrom(move);
+        const to = this.MoveTo(move);
         const piece = this.BoardState.Squares[to] as Piece;
 
-        if (moveType === MoveType.Castle) {
+        if (this.IsCastle(move)) {
             this.UndoCastle(from, to);
         }
-        else if (moveType === MoveType.Promotion) {
+        else if (this.HasFlag(move, MoveFlag.Promotion)) {
             this.RemovePiece(piece.Type, piece.Color, to);
             this.PlacePiece(PieceType.Pawn, piece.Color, from);
 
@@ -1351,7 +1448,7 @@ class Khepri {
                 let captureSquare = to;
                 let captured = state.Captured;
 
-                if (moveType === MoveType.EnPassant) {
+                if (this.MoveType(move) === MoveType.EPCapture) {
                     captureSquare = piece.Color === Color.White ? to + 8 : to - 8;
                 }
 
@@ -1362,34 +1459,6 @@ class Khepri {
         // Set hash to previous value
         this.BoardState.Hash = state.Hash;
         this.BoardState.PawnHash = state.PawnHash;
-    }
-
-    MoveToString(move: number) {
-        const from = move & 0x3f;
-        let to = (move & 0xfc0) >> 6;
-        const type = (move & 0x3f80) >> 12;
-
-        if (type === MoveType.Castle && !this.isChess960) {
-            to = to > from ? to - 1 : to + 2;
-        }
-
-        let prettymove = `${Square[from]}${Square[to]}`;
-        if (type === MoveType.Promotion) {
-            const promotionType = move >> 14;
-            if (promotionType === PromotionType.Knight) {
-                prettymove += "n";
-            }
-            if (promotionType === PromotionType.Bishop) {
-                prettymove += "b";
-            }
-            if (promotionType === PromotionType.Rook) {
-                prettymove += "r";
-            }
-            if (promotionType === PromotionType.Queen) {
-                prettymove += "q";
-            }
-        }
-        return prettymove;
     }
 
     IsSquareAttacked(square: Square, side: Color) {
@@ -1492,11 +1561,13 @@ class Khepri {
         mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Bishop]) * this.MGPieceValue[PieceType.Bishop];
         mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Rook]) * this.MGPieceValue[PieceType.Rook];
         mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Queen]) * this.MGPieceValue[PieceType.Queen];
+        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.King]) * this.MGPieceValue[PieceType.King];
         mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Pawn + 6]) * this.MGPieceValue[PieceType.Pawn];
         mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Knight + 6]) * this.MGPieceValue[PieceType.Knight];
         mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Bishop + 6]) * this.MGPieceValue[PieceType.Bishop];
         mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Rook + 6]) * this.MGPieceValue[PieceType.Rook];
         mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Queen + 6]) * this.MGPieceValue[PieceType.Queen];
+        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.King + 6]) * this.MGPieceValue[PieceType.King];
 
         return mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1];
     }
@@ -1508,6 +1579,7 @@ class Khepri {
      ****************************/
     private readonly INFINITY = 50000;
     private readonly MAXPLY = 100;
+    private readonly ABORTEDSCORE = 500000;
     private nodesSearched = 0;
     private pvArray: number[][] = Array(this.MAXPLY).fill(0).map(() => Array(this.MAXPLY).fill(0));
     private pvLength = Array(this.MAXPLY).fill(0);
@@ -1516,7 +1588,7 @@ class Khepri {
         let pv = "";
 
         for (let i = 0; i < this.pvLength[0]; i++) {
-            pv += this.MoveToString(this.pvArray[0][i]) + " ";
+            pv += this.StringifyMove(this.pvArray[0][i]) + " ";
         }
     
         return pv;
@@ -1531,6 +1603,7 @@ class Khepri {
     }
 
     Search(targetDepth: number) {
+        this.StartTimer();
         let alpha = -this.INFINITY;
         let beta = this.INFINITY;
         let score = -this.INFINITY;
@@ -1541,6 +1614,7 @@ class Khepri {
         this.pvLength = Array(this.MAXPLY).fill(0);
 
         this.nodesSearched = 0;
+        this.BoardState.Ply = 0;
 
         // Iterative deepening
         for (let depth = 1; depth <= targetDepth; depth++) {
@@ -1553,6 +1627,10 @@ class Khepri {
             }
 
             while (true) {
+                if (this.Timer.stop) {
+                    break;
+                }
+
                 score = this.NegaScout(alpha, beta, depth);
 
                 // Adjust the aspiration window depending on whether the search failed high or low, or break from the loop if it didn't.
@@ -1570,15 +1648,32 @@ class Khepri {
                 margin += margin / 2;
             }
 
+            if (this.Timer.stop) {
+                break;
+            }
+
             const endTime = Date.now();
 
             console.log(`info depth ${depth} score ${score} nodes ${this.nodesSearched} nps ${(this.nodesSearched * 1000) / (endTime - startTime) | 0} time ${endTime - startTime} pv ${this.GetPv()}`);
         }
 
-        console.log(`bestmove ${this.MoveToString(this.pvArray[0][0])}`);
+        console.log(`bestmove ${this.StringifyMove(this.pvArray[0][0])}`);
     }
 
     NegaScout(alpha: number, beta: number, depth: number) {
+        // Check whether search time is up every 1000 nodes
+        if (this.nodesSearched % 1000 === 0) {
+            this.CheckTime();
+
+            if (this.Timer.stop) {
+                return this.ABORTEDSCORE;
+            }
+        }
+
+        if (this.BoardState.Ply >= this.MAXPLY) {
+            return 0;
+        }
+
         this.nodesSearched++;
         this.pvLength[this.BoardState.Ply] = this.BoardState.Ply;
 
@@ -1592,30 +1687,39 @@ class Khepri {
         let bestMove = 0;
         let b = beta;
         let ttMove = 0;
+        let legalMoves = 0;
 
-        if (!isPVNode) {
-            const entry = this.GetEntry(this.BoardState.Hash);
+        const entry = this.GetEntry(this.BoardState.Hash);
 
-            if (entry && entry.Depth >= depth && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
-                return entry.Score;
-            }
-
-            // If the entry doesn't contain a valid score to return, we can still use the move for move ordering
-            if (entry) {
-                ttMove = entry.Move;
-            }
+        if (!isPVNode && entry && entry.Depth >= depth && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
+            return entry.Score;
         }
+
+        // Even if the entry doesn't contain a valid score to return, we can still use the move for move ordering
+        if (entry) {
+            ttMove = entry.Move;
+        }
+
+        // const staticEval = this.Evaluate();
+        const inCheck = this.IsSquareAttacked(this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)]), this.BoardState.SideToMove ^ 1);
 
         const moves = this.SortMoves(this.GenerateMoves(), ttMove);
 
         for (let i = 0; i < moves.length; i++) {
-            // const move = moves[i];
             const move = this.NextMove(moves, i).move;
+            // const move = moves[i].move;
+
+            // futility pruning
+            // if (!isPVNode && !inCheck && depth <= 10 && staticEval + 35 * depth < alpha) {
+            //     continue;
+            // }
 
             if (!this.MakeMove(move)) {
                 this.UnmakeMove(move);
                 continue;
             }
+
+            legalMoves++;
 
             let score = -this.NegaScout(-b, -alpha, depth - 1);
 
@@ -1624,6 +1728,10 @@ class Khepri {
             }
 
             this.UnmakeMove(move);
+
+            if (this.Timer.stop) {
+                return this.ABORTEDSCORE;
+            }
 
             if (score > bestScore) {
                 bestScore = score;
@@ -1637,16 +1745,26 @@ class Khepri {
             }
 
             if (alpha >= beta) {
-                this.StoreEntry(this.BoardState.Hash, depth, bestMove, bestScore, HashFlag.Beta);
-                return alpha;
+                hashFlag = HashFlag.Beta;
+                break;
             }
 
             b = alpha + 1;
         }
 
+        // If there are no legal moves, it's either checkmate or stalemate
+        if (legalMoves === 0) {
+            if (inCheck) {
+                return -this.INFINITY + this.BoardState.Ply;
+            }
+            else {
+                return 0;
+            }
+        }
+
         this.StoreEntry(this.BoardState.Hash, depth, bestMove, bestScore, hashFlag);
         
-        return alpha;
+        return bestScore;
     }
 
     /**
@@ -1858,6 +1976,222 @@ class Khepri {
         console.log(`Plies: ${this.BoardState.Ply}`);
     }
 
+    /***************************
+     * 
+     *     Time Management
+     * 
+     **************************/
+
+    private readonly Timer = {
+        timeleft: -1, // infinite time left
+        increment: 0,
+        depth: this.MAXPLY,
+        movestogo: 0,
+        startTime: 0,
+        stopTime: 0,
+        movetime: -1, // infinite time per move
+        stop: false,
+        extended: false,
+    }
+
+    StartTimer() {
+        let searchTime = 0;
+        this.Timer.stop = false;
+        this.Timer.extended = false;
+
+        // If infinite time, we don't need to set any time limit on searching
+        if (this.Timer.timeleft === -1 && this.Timer.movetime === -1) {
+            return;
+        }
+
+        // If there are moves left until the next time control, diving the remaining time equally
+        if (this.Timer.movestogo !== 0) {
+            searchTime = this.Timer.timeleft / this.Timer.movestogo;
+        }
+        else if (this.Timer.movetime !== -1) {
+            searchTime = this.Timer.movetime;
+        }
+        else {
+            // Games, on average, take approximately 40 moves to complete
+            let movesleft = 0;
+            if (this.BoardState.Ply <= 20) {
+                movesleft = 45 - this.BoardState.Ply;
+            }
+            else {
+                movesleft = 25;
+            }
+
+            searchTime = this.Timer.timeleft / movesleft;
+        }
+
+        searchTime += this.Timer.increment / 2;
+
+        if (searchTime >= this.Timer.timeleft) {
+            searchTime -= this.Timer.increment;
+        }
+
+        if (searchTime <= 0) {
+            searchTime = this.Timer.increment - 1;
+        }
+
+        this.Timer.startTime = Date.now();
+        this.Timer.stopTime = this.Timer.startTime + searchTime;
+    }
+
+    CheckTime() {
+        // Never need to stop if there is no limit on search time
+        if (!this.Timer.stop && this.Timer.timeleft === -1 && this.Timer.movetime === -1) {
+            return;
+        }
+
+        // Search for at least the calculated time limit, but can search longer if extended (up to 75% of the total time left)
+        if (Date.now() > this.Timer.stopTime && (!this.Timer.extended || Date.now() - this.Timer.startTime >= (this.Timer.timeleft * 0.75))) {
+            this.Timer.stop = true;
+        }
+    }
+
+    /***************************
+     * 
+     *          UCI
+     * 
+     **************************/
+
+    ParseUCIPosition(command: string) {
+        // given command with start with "position", which we can remove
+        const position = command.split(' ').slice(1).join(' ');
+
+        // apply the position
+        if (position.startsWith("fen")) {
+            this.LoadFEN(position.split(' ').slice(1).join(' '));
+        }
+        else {
+            this.LoadFEN(Khepri.positions.start);
+        }
+
+        // get the moves from the string
+        const moves = position.split('moves ').slice(1).join(' ').split(' ').filter(x => x != "");
+
+        for (let i = 0; i < moves.length; i++) {
+            const move = this.ParseUCIMove(moves[i]);
+
+            if (!move) {
+                console.error('Unable to parse UCI command');
+                console.log(`Command: ${command}`);
+                console.log(`Invalid move: ${moves[i]}`);
+                break;
+            }
+
+            this.MakeMove(move);
+        }
+    }
+
+    /**
+     * Converts an move from the GUI to a move the engine can understand and make
+     * @param move The move in algebraic notation
+     * @returns The move in an engine-recognizable numeric format
+     */
+    ParseUCIMove(move: string) {
+        const fromFile = parseInt(move.charAt(0), 36) - 10;
+        const fromRank = 7 - (parseInt(move.charAt(1)) - 1);
+        const from = (fromRank * 8) + fromFile;
+        const toFile = parseInt(move.charAt(2), 36) - 10;
+        const toRank = 7 - (parseInt(move.charAt(3)) - 1);
+        let to = (toRank * 8) + toFile;
+
+        const piece = this.BoardState.Squares[from] as Piece;
+        let moveType = MoveType.Quiet;
+
+        // If the move has 5 characters, the 5th is a promotion
+        if (move.length === 5) {
+            const promotion = move.charAt(4);
+
+            // UCI notation does not differentiate between promotions and promotion captures
+            if (promotion === "n") {
+                moveType = MoveType.KnightPromotion;
+            }
+            else if (promotion === "b") {
+                moveType = MoveType.BishopPromotion;
+            }
+            else if (promotion === "r") {
+                moveType = MoveType.RookPromotion;
+            }
+            else if (promotion === "q") {
+                moveType = MoveType.QueenPromotion;
+            }
+        }
+        // Check if the move was a castling move
+        if (piece.Type === PieceType.King) {
+            const kingSide = to > from;
+
+            // Castling in standard chess always has the same strings...
+            if (!this.isChess960 && (move === "e1g1" || move === "e1c1" || move === "e8g8" || move === "e8c8")) {
+                to = (kingSide ? Square.h1 : Square.a1) ^ (piece.Color * 56);
+                moveType = kingSide ? MoveType.KingCastle : MoveType.QueenCastle;
+            }
+            // Chess960 is a little more hard to parse. We have to check if the move is to the rook square and the side still has castling rights.
+            else if (
+                (to === this.BoardState.CastlingRookSquares[CastlingRights.WhiteKingside] && this.BoardState.CastlingRights & CastlingRights.WhiteKingside)
+                || (to === this.BoardState.CastlingRookSquares[CastlingRights.BlackKingside] && this.BoardState.CastlingRights & CastlingRights.BlackKingside)
+                || (to === this.BoardState.CastlingRookSquares[CastlingRights.WhiteQueenside] && this.BoardState.CastlingRights & CastlingRights.WhiteQueenside)
+                || (to === this.BoardState.CastlingRookSquares[CastlingRights.BlackQueenside] && this.BoardState.CastlingRights & CastlingRights.BlackQueenside)
+            ) {
+                moveType = kingSide ? MoveType.KingCastle : MoveType.QueenCastle;
+            }
+        }
+        // If en passant capture
+        else if (to === this.BoardState.EnPassSq && piece.Type === PieceType.Pawn) {
+            moveType = MoveType.EPCapture;
+        }
+        
+        return this.EncodeMove(from, to, moveType);
+    }
+
+    /**
+     * Parse the "go" command from the GUI to begin searching the position
+     * @param command The UCI command
+     * @returns The principal variation and best move
+     */
+    ParseUCIGo(command: string) {
+        const commands = command.split(" ");
+        const sidePrefix = this.BoardState.SideToMove === Color.White ? "w" : "b";
+
+        let timeleft = -1; // negative value indicates infinite time
+        let increment = 0;
+        let movestogo = 0;
+        let movetime = -1; // -1 is infinite
+        let depth = this.MAXPLY;
+
+        for (let i = 0; i < commands.length; i++) {
+            const command = commands[i];
+
+            if (command === sidePrefix + "time") {
+                timeleft = parseInt(commands[i + 1]);
+            }
+            else if (command === sidePrefix + "inc") {
+                increment = parseInt(commands[i + 1]);
+            }
+            else if (command === "movestogo") {
+                movestogo = parseInt(commands[i + 1]);
+            }
+            else if (command === "depth") {
+                // set depth to UCI value, unless it is greater than the max ply
+                depth = Math.min(parseInt(commands[i + 1]), this.MAXPLY);
+            }
+            else if (command === "movetime") {
+                movetime = parseInt(commands[i + 1]);
+            }
+        }
+
+        // Set the engine's timer values to values from the UCI command
+        this.Timer.timeleft = timeleft;
+        this.Timer.increment = increment;
+        this.Timer.depth = depth;
+        this.Timer.movestogo = movestogo;
+        this.Timer.movetime = movetime;
+
+        return this.Search(depth);
+    }
+
     /****************************
      * 
      *       Perft Tests
@@ -1880,7 +2214,7 @@ class Khepri {
                 let nodes = this.PerftDriver(depth - 1);
     
                 if (printNodes) {
-                    console.log(`${this.MoveToString(move)}: ${nodes}`);
+                    console.log(`${this.StringifyMove(move)}: ${nodes}`);
                 }
             }
     
