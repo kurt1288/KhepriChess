@@ -1549,27 +1549,83 @@ class Khepri {
      *        Evaluation
      *
      ****************************/
-
-    readonly MGPieceValue = [100, 300, 350, 500, 1000, 15000];
+    
+    readonly MGPieceValue = [80, 321, 328, 447, 912, 15000];
+    readonly EGPieceValue = [102, 256, 271, 472, 911, 15000];
+    readonly MGKnightOutpost = 20;
+    readonly EGKnightOutpost = 10;
+    readonly MGCenterControl = 8;
+    readonly EGCenterControl = 4;
 
     Evaluate() {
         let mg = [0, 0];
+        let eg = [0, 0];
+        let phase = this.BoardState.Phase;
+
+        let wPawns = this.BoardState.PiecesBB[PieceType.Pawn];
+        let bPawns = this.BoardState.PiecesBB[PieceType.Pawn + 6];
+        let wKnights = this.BoardState.PiecesBB[PieceType.Knight];
+        let bKnights = this.BoardState.PiecesBB[PieceType.Knight + 6];
+        let wBishops = this.BoardState.PiecesBB[PieceType.Bishop];
+        let bBishops = this.BoardState.PiecesBB[PieceType.Bishop + 6];
+
+        const wPawnsCount = this.CountBits(wPawns);
+        const wKnightsCount = this.CountBits(wKnights);
+        const wBishopsCount = this.CountBits(wBishops);
+        const wRooks = this.CountBits(this.BoardState.PiecesBB[PieceType.Rook]);
+        const wQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen]);
+        const bPawnsCount = this.CountBits(bPawns);
+        const bKnightsCount = this.CountBits(bKnights);
+        const bBishopsCount = this.CountBits(bBishops);
+        const bRooks = this.CountBits(this.BoardState.PiecesBB[PieceType.Rook + 6]);
+        const bQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen + 6]);
 
         // piece values
-        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Pawn]) * this.MGPieceValue[PieceType.Pawn];
-        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Knight]) * this.MGPieceValue[PieceType.Knight];
-        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Bishop]) * this.MGPieceValue[PieceType.Bishop];
-        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Rook]) * this.MGPieceValue[PieceType.Rook];
-        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.Queen]) * this.MGPieceValue[PieceType.Queen];
-        mg[Color.White] += this.CountBits(this.BoardState.PiecesBB[PieceType.King]) * this.MGPieceValue[PieceType.King];
-        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Pawn + 6]) * this.MGPieceValue[PieceType.Pawn];
-        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Knight + 6]) * this.MGPieceValue[PieceType.Knight];
-        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Bishop + 6]) * this.MGPieceValue[PieceType.Bishop];
-        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Rook + 6]) * this.MGPieceValue[PieceType.Rook];
-        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.Queen + 6]) * this.MGPieceValue[PieceType.Queen];
-        mg[Color.Black] += this.CountBits(this.BoardState.PiecesBB[PieceType.King + 6]) * this.MGPieceValue[PieceType.King];
+        mg[Color.White] += wPawnsCount * this.MGPieceValue[PieceType.Pawn];
+        mg[Color.White] += wKnightsCount * this.MGPieceValue[PieceType.Knight];
+        mg[Color.White] += wBishopsCount * this.MGPieceValue[PieceType.Bishop];
+        mg[Color.White] += wRooks * this.MGPieceValue[PieceType.Rook];
+        mg[Color.White] += wQueens * this.MGPieceValue[PieceType.Queen];
+        mg[Color.White] += this.MGPieceValue[PieceType.King];
+        mg[Color.Black] += bPawnsCount * this.MGPieceValue[PieceType.Pawn];
+        mg[Color.Black] += bKnightsCount * this.MGPieceValue[PieceType.Knight];
+        mg[Color.Black] += bBishopsCount * this.MGPieceValue[PieceType.Bishop];
+        mg[Color.Black] += bRooks * this.MGPieceValue[PieceType.Rook];
+        mg[Color.Black] += bQueens * this.MGPieceValue[PieceType.Queen];
+        mg[Color.Black] += this.MGPieceValue[PieceType.King];
 
-        return mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1];
+        eg[Color.White] += wPawnsCount * this.EGPieceValue[PieceType.Pawn];
+        eg[Color.White] += wKnightsCount * this.EGPieceValue[PieceType.Knight];
+        eg[Color.White] += wBishopsCount * this.EGPieceValue[PieceType.Bishop];
+        eg[Color.White] += wRooks * this.EGPieceValue[PieceType.Rook];
+        eg[Color.White] += wQueens * this.EGPieceValue[PieceType.Queen];
+        eg[Color.White] += this.EGPieceValue[PieceType.King];
+        eg[Color.Black] += bPawnsCount * this.EGPieceValue[PieceType.Pawn];
+        eg[Color.Black] += bKnightsCount * this.EGPieceValue[PieceType.Knight];
+        eg[Color.Black] += bBishopsCount * this.EGPieceValue[PieceType.Bishop];
+        eg[Color.Black] += bRooks * this.EGPieceValue[PieceType.Rook];
+        eg[Color.Black] += bQueens * this.EGPieceValue[PieceType.Queen];
+        eg[Color.Black] += this.EGPieceValue[PieceType.King];
+
+        // knight outposts
+        // this should be updated to only count knights in the opponent's half of the board
+        if (wPawns & (this.Shift(wKnights, Direction.SOUTHEAST) | this.Shift(wKnights, Direction.SOUTHWEST))) {
+            mg[Color.White] += this.MGKnightOutpost;
+            eg[Color.White] += this.EGKnightOutpost;
+        }
+
+        if (bPawns & (this.Shift(bKnights, Direction.NORTHEAST) | this.Shift(bKnights, Direction.NORTHWEST))) {
+            mg[Color.Black] += this.MGKnightOutpost;
+            eg[Color.Black] += this.EGKnightOutpost;
+        }
+
+        const opening = mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1];
+        const endgame = eg[this.BoardState.SideToMove] - eg[this.BoardState.SideToMove ^ 1];
+        
+        phase = ((phase * 256 + (this.PhaseTotal / 2)) / this.PhaseTotal) | 0;
+
+        // tapered eval
+        return (((opening * (256 - phase)) + (endgame * phase)) / 256 | 0);
     }
 
     /****************************
