@@ -817,11 +817,11 @@ class Khepri {
     }
 
     IsCapture(move: number) {
-        return (move & MoveFlag.Capture) !== 0;
+        return ((move >> 12) & MoveFlag.Capture) !== 0;
     }
 
     IsPromotion(move: number) {
-        return (move & MoveFlag.Promotion) !== 0;
+        return ((move >> 12) & MoveFlag.Promotion) !== 0;
     }
 
     MoveTo(move: number) {
@@ -1015,7 +1015,7 @@ class Khepri {
         let pieces = this.BoardState.OccupanciesBB[this.BoardState.SideToMove] & ~this.BoardState.PiecesBB[PieceType.Pawn + (6 * this.BoardState.SideToMove)];
 
         // generate pawns (done separately because they have many unique moves)
-        moveList.push(...this.GeneratePawnMoves());
+        moveList.push(...this.GeneratePawnMoves(capturesOnly));
 
         // Iterate through all non-pawn pieces
         while (pieces) {
@@ -1549,18 +1549,228 @@ class Khepri {
      *        Evaluation
      *
      ****************************/
-    
+
+    readonly PST = [
+        // opening/middle game values
+        [
+            // pawn
+            [
+                  0,   0,   0,   0,   0,  0,  0,   0,
+                 24,  24,  16,  16,   9, 10,  7,   6,
+                  0,  11,  12,   8,  13, 21, 10,  -6,
+                -23,   4,  -5,  12,  16,  3,  5, -26,
+                -28, -13,  -6,   3,   6,  0,  0, -30,
+                -24, -13,  -9, -10,   0, -2, 21, -15,
+                -28,  -8, -25, -17, -12, 11, 28, -21,
+                  0,   0,   0,   0,   0,  0,  0,   0,
+            ],
+            
+            // knight
+            [
+                -11,  -2,  -1,  -1,  1, -4, -1, -5,
+                 -9,  -4,   5,   4,  2,  4,  0, -2,
+                 -6,   9,   3,  11, 14, 13, 12,  5,
+                  2,   0,  -1,  18,  6, 20,  9, 18,
+                  0,  -1,  -3, -10,  3, -3,  8,  8,
+                -10, -14, -10,  -5,  6, -2,  4, -6,
+                 -5,  -5, -19,  -1, -3,  0, -1,  4,
+                 -5,  -2,  -6,  -5,  0,  3, -2, -3,
+            ],
+
+            // bishop
+            [
+                 -4,  0, -4, -2, -1, -1, -1,  -1,
+                 -8, -3, -6, -4,  2,  1, -2, -13,
+                -10,  0,  3,  5,  4, 11,  5,   4,
+                 -8, -5,  2, 16,  7, 10, -1,  -3,
+                  0,  3, -4,  7, 13, -9, -5,   8,
+                 -1, 11,  4, -2, -1,  5,  7,   1,
+                  6,  7,  8, -4,  0,  9, 22,  -1,
+                -11,  1, -1, -4,  2, -5, -3,  -6,
+            ],
+
+            // rook
+            [
+                  4,   4,   3,  6,  6,  2,   3,   4,
+                  3,   3,  10,  9,  9,  8,   4,   5,
+                 -4,   6,   2,  8,  1,  7,   6,   2,
+                 -8,  -6,   1, -1,  3,  8,  -1,   1,
+                -17,  -9,  -9, -6, -5, -7,   1, -12,
+                -22, -14, -12, -9, -6, -4,  -2, -12,
+                -23, -11, -12, -5, -2,  1,  -1, -30,
+                 -3,  -7,  -4,  4,  9, 12, -20,  -3,
+            ],
+
+            // queen
+            [
+                 -5,   2,  4,  2,  6,   3,  3,  5,
+                -13, -23,  2,  6,  4,  10,  5, 12,
+                 -7,  -6, -2,  3, 12,  16, 17, 22,
+                -10, -11, -5, -5,  7,   6,  9, 14,
+                 -5, -13, -9, -8, -1,   3,  8,  5,
+                 -9,  -5, -2, -5, -5,   5,  2,  4,
+                -14,  -8,  3,  7,  8,   6, -7,  2,
+                 -6, -10, -4, 13, -3, -13, -5, -6,
+            ],
+
+            // king
+            [
+                 -1,  0,  0,   0,   0,   0,  1,   0,
+                  0,  2,  1,   2,   2,   2,  1,   0,
+                  1,  3,  3,   3,   2,   6,  5,   1,
+                  0,  2,  4,   3,   3,   4,  3,  -3,
+                 -3,  1,  3,   1,   1,   0, -3,  -9,
+                 -2,  0,  1,  -3,  -2,  -6, -2, -11,
+                 -2, -1, -3, -25, -25, -13, 13,  14,
+                -14, 14, 10, -29,   7, -27, 30,   9,
+            ]
+        ],
+        // end game values
+        [
+            // pawn
+            [
+                  0,  0,   0,   0,   0,   0,   0,   0,
+                 50, 47,  35,  28,  25,  25,  31,  39,
+                 35, 32,  22,   5,   2,   9,  22,  21,
+                  8,  0, -11, -27, -27, -21,  -8, -10,
+                 -4, -4, -19, -26, -26, -24, -17, -19,
+                -14, -9, -19, -17, -18, -19, -24, -26,
+                 -7, -9,  -5, -11,  -8, -18, -22, -26,
+                  0,  0,   0,   0,   0,   0,   0,   0,
+            ],
+
+            // knight
+            [
+                -10,  -3,   0, -3,  1,  -6, -4, -7,
+                 -5,   3,  -3,  6,  1,  -4, -2, -5,
+                 -5,  -2,   2,  1,  1,   1,  1, -3,
+                  1,   7,   7,  5,  7,   5,  8,  5,
+                 -1,   0,   2,  9,  3,   3,  6, -1,
+                 -3,  -3, -11,  2, -4, -17, -4, -2,
+                 -3,  -2,  -7, -5,  1,  -7,  0, -2,
+                 -5, -13,  -4,  0, -2,  -4, -9, -4,
+            ],
+
+            // bishop
+            [
+                -4,  -2, -4, -2, -1, -2, -2, -3,
+                -3,  -1,  0, -7,  0, -3, -4, -7,
+                 1,  -1,  0,  0,  0,  3,  1,  2,
+                -2,   4,  4, 11,  5,  4, -1,  1,
+                -1,  -2,  7,  9,  2,  3, -3, -1,
+                 1,   0,  2,  5,  6, -3, -1,  1,
+                -3, -11, -7, -1,  1, -5, -7, -4,
+                -9,  -1, -6, -2, -2, -4, -4, -5,
+            ],
+
+            // rook
+            [
+                 11,  9, 11, 13,  11,   7,  9,   7,
+                 12, 13, 14, 13,   9,   7,  8,   8,
+                  5,  7,  5,  5,   0,   1,  2,  -2,
+                 -2,  0,  5, -2,  -1,   2, -2,   0,
+                 -1, -2,  1, -4,  -6,  -8, -6,  -8,
+                 -8, -5, -9, -7, -11, -13, -6, -10,
+                 -7, -7, -5, -6,  -9,  -9, -7,  -8,
+                -10, -3,  0, -7, -12, -13, -3, -21,
+            ],
+
+            // queen
+            [
+                -5,  2,   4,   3,  6,  4,  2,  4,
+                -8, -5,   4,   7,  7,  7,  3,  4,
+                -5, -3,   0,   7, 11, 11,  7,  9,
+                -6, -1,   1,   8, 12,  6,  9,  8,
+                -7, -2,   3,  13,  8,  6,  6,  4,
+                -5, -8,   1,  -3,  0,  1,  3,  2,
+                -7, -7, -14, -11, -9, -5, -6, -1,
+                -6, -8,  -7, -17, -5, -9, -4, -5,
+            ],
+
+            // king
+            [
+                 -3,  -2,  -2,  -1,   0,   1,   2,  -2,
+                 -2,   6,   6,   6,   6,  12,   7,   0,
+                  1,  12,  14,  12,  11,  23,  21,   3,
+                 -4,   9,  18,  23,  17,  21,  14,  -5,
+                -11,  -4,  14,  20,  19,  15,   2, -18,
+                -13,  -5,   7,  14,  15,   9,   0, -16,
+                -16,  -9,   2,   6,  10,   3, -11, -25,
+                -22, -25, -16, -15, -25, -12, -35, -44,
+            ]
+        ]
+    ];
+
+    private readonly LargeCenter = 0x0000001818000000n;
+    private readonly CenterManhattanDistance = [
+        6, 5, 4, 3, 3, 4, 5, 6,
+        5, 4, 3, 2, 2, 3, 4, 5,
+        4, 3, 2, 1, 1, 2, 3, 4,
+        3, 2, 1, 0, 0, 1, 2, 3,
+        3, 2, 1, 0, 0, 1, 2, 3,
+        4, 3, 2, 1, 1, 2, 3, 4,
+        5, 4, 3, 2, 2, 3, 4, 5,
+        6, 5, 4, 3, 3, 4, 5, 6
+    ];
+    private readonly CornerDistance = [
+        0, 1, 2, 3, 3, 2, 1, 0,
+        1, 1, 2, 3, 3, 2, 1, 1,
+        2, 2, 2, 3, 3, 2, 2, 2,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        2, 2, 2, 3, 3, 2, 2, 2,
+        1, 1, 2, 3, 3, 2, 1, 1,
+        0, 1, 2, 3, 3, 2, 1, 0,
+    ];
+    private readonly CornerSquares = [
+        1, 0, 0, 0, 0, 0, 0, 1,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        1, 0, 0, 0, 0, 0, 0, 1,
+    ];
+    private readonly EdgeDistance = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 1, 1, 1, 1, 1, 1, 0,
+        0, 1, 2, 2, 2, 2, 1, 0,
+        0, 1, 2, 3, 3, 2, 1, 0,
+        0, 1, 2, 3, 3, 2, 1, 0,
+        0, 1, 2, 2, 2, 2, 1, 0,
+        0, 1, 1, 1, 1, 1, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+
     readonly MGPieceValue = [80, 321, 328, 447, 912, 15000];
     readonly EGPieceValue = [102, 256, 271, 472, 911, 15000];
     readonly MGKnightOutpost = 20;
     readonly EGKnightOutpost = 10;
     readonly MGCenterControl = 8;
     readonly EGCenterControl = 4;
+    readonly MGCenterAttacks = [-15, 8, 20];
 
     Evaluate() {
         let mg = [0, 0];
         let eg = [0, 0];
         let phase = this.BoardState.Phase;
+        let occupied = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
+
+        // while (occupied) {
+        //     let square = this.GetLS1B(occupied);
+        //     occupied = this.RemoveBit(occupied, square);
+        //     const piece = this.BoardState.Squares[square] as Piece;
+
+        //     // Because the PST are from white's perspective, we have to flip the square if the piece is black's
+        //     if (piece.Color === Color.Black) {
+        //         square ^= 56;
+        //     }
+
+        //     // PST and material scores
+        //     mg[piece.Color] += this.PST[0][piece.Type][square] + this.MGPieceValue[piece.Type];
+        //     eg[piece.Color] += this.PST[1][piece.Type][square] + this.EGPieceValue[piece.Type];
+        // }
 
         let wPawns = this.BoardState.PiecesBB[PieceType.Pawn];
         let bPawns = this.BoardState.PiecesBB[PieceType.Pawn + 6];
@@ -1568,42 +1778,44 @@ class Khepri {
         let bKnights = this.BoardState.PiecesBB[PieceType.Knight + 6];
         let wBishops = this.BoardState.PiecesBB[PieceType.Bishop];
         let bBishops = this.BoardState.PiecesBB[PieceType.Bishop + 6];
+        let wRooks = this.BoardState.PiecesBB[PieceType.Rook];
+        let bRooks = this.BoardState.PiecesBB[PieceType.Rook + 6];
 
         const wPawnsCount = this.CountBits(wPawns);
         const wKnightsCount = this.CountBits(wKnights);
         const wBishopsCount = this.CountBits(wBishops);
-        const wRooks = this.CountBits(this.BoardState.PiecesBB[PieceType.Rook]);
+        const wRooksCount = this.CountBits(wRooks);
         const wQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen]);
         const bPawnsCount = this.CountBits(bPawns);
         const bKnightsCount = this.CountBits(bKnights);
         const bBishopsCount = this.CountBits(bBishops);
-        const bRooks = this.CountBits(this.BoardState.PiecesBB[PieceType.Rook + 6]);
+        const bRooksCount = this.CountBits(bRooks);
         const bQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen + 6]);
 
         // piece values
         mg[Color.White] += wPawnsCount * this.MGPieceValue[PieceType.Pawn];
         mg[Color.White] += wKnightsCount * this.MGPieceValue[PieceType.Knight];
         mg[Color.White] += wBishopsCount * this.MGPieceValue[PieceType.Bishop];
-        mg[Color.White] += wRooks * this.MGPieceValue[PieceType.Rook];
+        mg[Color.White] += wRooksCount * this.MGPieceValue[PieceType.Rook];
         mg[Color.White] += wQueens * this.MGPieceValue[PieceType.Queen];
         mg[Color.White] += this.MGPieceValue[PieceType.King];
         mg[Color.Black] += bPawnsCount * this.MGPieceValue[PieceType.Pawn];
         mg[Color.Black] += bKnightsCount * this.MGPieceValue[PieceType.Knight];
         mg[Color.Black] += bBishopsCount * this.MGPieceValue[PieceType.Bishop];
-        mg[Color.Black] += bRooks * this.MGPieceValue[PieceType.Rook];
+        mg[Color.Black] += bRooksCount * this.MGPieceValue[PieceType.Rook];
         mg[Color.Black] += bQueens * this.MGPieceValue[PieceType.Queen];
         mg[Color.Black] += this.MGPieceValue[PieceType.King];
 
         eg[Color.White] += wPawnsCount * this.EGPieceValue[PieceType.Pawn];
         eg[Color.White] += wKnightsCount * this.EGPieceValue[PieceType.Knight];
         eg[Color.White] += wBishopsCount * this.EGPieceValue[PieceType.Bishop];
-        eg[Color.White] += wRooks * this.EGPieceValue[PieceType.Rook];
+        eg[Color.White] += wRooksCount * this.EGPieceValue[PieceType.Rook];
         eg[Color.White] += wQueens * this.EGPieceValue[PieceType.Queen];
         eg[Color.White] += this.EGPieceValue[PieceType.King];
         eg[Color.Black] += bPawnsCount * this.EGPieceValue[PieceType.Pawn];
         eg[Color.Black] += bKnightsCount * this.EGPieceValue[PieceType.Knight];
         eg[Color.Black] += bBishopsCount * this.EGPieceValue[PieceType.Bishop];
-        eg[Color.Black] += bRooks * this.EGPieceValue[PieceType.Rook];
+        eg[Color.Black] += bRooksCount * this.EGPieceValue[PieceType.Rook];
         eg[Color.Black] += bQueens * this.EGPieceValue[PieceType.Queen];
         eg[Color.Black] += this.EGPieceValue[PieceType.King];
 
@@ -1618,6 +1830,85 @@ class Khepri {
             mg[Color.Black] += this.MGKnightOutpost;
             eg[Color.Black] += this.EGKnightOutpost;
         }
+
+        const wKingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King]);
+        const bKingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + 6]);
+        const wKingFile = wKingSquare & 7;
+        const bKingFile = bKingSquare & 7;
+
+        // bishop
+        // while (wBishops) {
+        //     let square = this.GetLS1B(wBishops);
+        //     wBishops = this.RemoveBit(wBishops, square);
+
+        //     const attacks = this.GenerateBishopAttacks(occupied, square);
+        //     const centerAttacks = this.CountBits(attacks & this.LargeCenter);
+
+        //     // center attacks bonus
+        //     mg[Color.White] += this.MGCenterAttacks[centerAttacks];
+
+        //     // bonus for staying out of the center in the opening
+        //     mg[Color.White] += this.CenterManhattanDistance[square] * 4;
+
+        //     eg[Color.White] += this.CenterManhattanDistance[square] * -2;
+        // }
+
+        // while (bBishops) {
+        //     let square = this.GetLS1B(bBishops);
+        //     bBishops = this.RemoveBit(bBishops, square);
+
+        //     const attacks = this.GenerateBishopAttacks(occupied, square);
+        //     const centerAttacks = this.CountBits(attacks & this.LargeCenter);
+
+        //     // center attacks bonus
+        //     mg[Color.Black] += this.MGCenterAttacks[centerAttacks];
+
+        //     // bonus for staying out of the center in the opening
+        //     mg[Color.Black] += this.CenterManhattanDistance[square] * 4;
+
+        //     eg[Color.Black] += this.CenterManhattanDistance[square] * -2;
+        // }
+
+        // rook
+        while (wRooks) {
+            let square = this.GetLS1B(wRooks);
+            wRooks = this.RemoveBit(wRooks, square);
+
+            // mg[Color.White] -= this.EdgeDistance[square] * 5;
+
+            // (semi-)open file bonus
+            if ((this.fileMasks[square] & wPawns) === 0n) {
+                if ((this.fileMasks[square] & bPawns) === 0n) {
+                    mg[Color.White] += 30;
+                }
+                else {
+                    mg[Color.White] += 15;
+                }
+            }
+        }
+
+        while (bRooks) {
+            let square = this.GetLS1B(bRooks);
+            bRooks = this.RemoveBit(bRooks, square);
+
+            // mg[Color.Black] -= this.EdgeDistance[square] * 5;
+
+            // (semi-)open file bonus
+            if ((this.fileMasks[square] & bPawns) === 0n) {
+                if ((this.fileMasks[square] & wPawns) === 0n) {
+                    mg[Color.Black] += 30;
+                }
+                else {
+                    mg[Color.Black] += 15;
+                }
+            }
+        }
+
+        // king safety
+        mg[Color.White] += this.CenterManhattanDistance[wKingSquare] * 5;
+        mg[Color.Black] += this.CenterManhattanDistance[bKingSquare] * 5;
+        eg[Color.White] += this.CenterManhattanDistance[wKingSquare] * -5;
+        eg[Color.Black] += this.CenterManhattanDistance[bKingSquare] * -5;
 
         const opening = mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1];
         const endgame = eg[this.BoardState.SideToMove] - eg[this.BoardState.SideToMove ^ 1];
@@ -1726,15 +2017,17 @@ class Khepri {
             }
         }
 
+        this.nodesSearched++;
+
         if (this.BoardState.Ply >= this.MAXPLY) {
             return 0;
         }
-
-        this.nodesSearched++;
+        
         this.pvLength[this.BoardState.Ply] = this.BoardState.Ply;
 
         if (depth <= 0) {
-            return this.Evaluate();
+            // return this.Evaluate();
+            return this.Quiescence(alpha, beta);
         }
 
         const isPVNode = beta - alpha > 1;
@@ -1820,6 +2113,65 @@ class Khepri {
 
         this.StoreEntry(this.BoardState.Hash, depth, bestMove, bestScore, hashFlag);
         
+        return bestScore;
+    }
+
+    Quiescence(alpha: number, beta: number) {
+        if (this.nodesSearched % 1000 === 0) {
+            this.CheckTime();
+
+            if (this.Timer.stop) {
+                return this.ABORTEDSCORE;
+            }
+        }
+
+        this.nodesSearched++;
+
+        if (this.BoardState.Ply >= this.MAXPLY) {
+            return 0;
+        }
+
+        const staticEval = this.Evaluate();
+
+        if (staticEval >= beta) {
+            return beta;
+        }
+
+        if (staticEval > alpha) {
+            alpha = staticEval;
+        }
+
+        let bestScore = staticEval;
+        const moves = this.SortMoves(this.GenerateMoves(true), 0);
+
+        for (let i = 0; i < moves.length; i++) {
+            const move = this.NextMove(moves, i).move;
+
+            // if (staticEval + 200 + (Number(this.IsPromotion(move)) + this.MGPieceValue[PieceType.Queen]) < alpha) {
+            //     continue;
+            // }
+
+            if (!this.MakeMove(move)) {
+                this.UnmakeMove(move);
+                continue;
+            }
+
+            let score = -this.Quiescence(-beta, -alpha);
+            this.UnmakeMove(move);
+
+            if (score > bestScore) {
+                bestScore = score;
+            }
+
+            if (score >= beta) {
+                break;
+            }
+
+            if (score > alpha) {
+                alpha = score;
+            }                
+        }
+
         return bestScore;
     }
 
