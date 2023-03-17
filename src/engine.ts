@@ -1757,67 +1757,67 @@ class Khepri {
         let phase = this.BoardState.Phase;
         let occupied = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
 
-        // while (occupied) {
-        //     let square = this.GetLS1B(occupied);
-        //     occupied = this.RemoveBit(occupied, square);
-        //     const piece = this.BoardState.Squares[square] as Piece;
+        while (occupied) {
+            let square = this.GetLS1B(occupied);
+            occupied = this.RemoveBit(occupied, square);
+            const piece = this.BoardState.Squares[square] as Piece;
 
-        //     // Because the PST are from white's perspective, we have to flip the square if the piece is black's
-        //     if (piece.Color === Color.Black) {
-        //         square ^= 56;
-        //     }
+            // Because the PST are from white's perspective, we have to flip the square if the piece is black's
+            if (piece.Color === Color.Black) {
+                square ^= 56;
+            }
 
-        //     // PST and material scores
-        //     mg[piece.Color] += this.PST[0][piece.Type][square] + this.MGPieceValue[piece.Type];
-        //     eg[piece.Color] += this.PST[1][piece.Type][square] + this.EGPieceValue[piece.Type];
-        // }
+            // PST and material scores
+            mg[piece.Color] += this.PST[0][piece.Type][square] + this.MGPieceValue[piece.Type];
+            eg[piece.Color] += this.PST[1][piece.Type][square] + this.EGPieceValue[piece.Type];
+        }
 
         let wPawns = this.BoardState.PiecesBB[PieceType.Pawn];
         let bPawns = this.BoardState.PiecesBB[PieceType.Pawn + 6];
         let wKnights = this.BoardState.PiecesBB[PieceType.Knight];
         let bKnights = this.BoardState.PiecesBB[PieceType.Knight + 6];
-        let wBishops = this.BoardState.PiecesBB[PieceType.Bishop];
-        let bBishops = this.BoardState.PiecesBB[PieceType.Bishop + 6];
+        // let wBishops = this.BoardState.PiecesBB[PieceType.Bishop];
+        // let bBishops = this.BoardState.PiecesBB[PieceType.Bishop + 6];
         let wRooks = this.BoardState.PiecesBB[PieceType.Rook];
         let bRooks = this.BoardState.PiecesBB[PieceType.Rook + 6];
 
-        const wPawnsCount = this.CountBits(wPawns);
-        const wKnightsCount = this.CountBits(wKnights);
-        const wBishopsCount = this.CountBits(wBishops);
-        const wRooksCount = this.CountBits(wRooks);
-        const wQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen]);
-        const bPawnsCount = this.CountBits(bPawns);
-        const bKnightsCount = this.CountBits(bKnights);
-        const bBishopsCount = this.CountBits(bBishops);
-        const bRooksCount = this.CountBits(bRooks);
-        const bQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen + 6]);
+        // const wPawnsCount = this.CountBits(wPawns);
+        // const wKnightsCount = this.CountBits(wKnights);
+        // const wBishopsCount = this.CountBits(wBishops);
+        // const wRooksCount = this.CountBits(wRooks);
+        // const wQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen]);
+        // const bPawnsCount = this.CountBits(bPawns);
+        // const bKnightsCount = this.CountBits(bKnights);
+        // const bBishopsCount = this.CountBits(bBishops);
+        // const bRooksCount = this.CountBits(bRooks);
+        // const bQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen + 6]);
 
-        // piece values
-        mg[Color.White] += wPawnsCount * this.MGPieceValue[PieceType.Pawn];
-        mg[Color.White] += wKnightsCount * this.MGPieceValue[PieceType.Knight];
-        mg[Color.White] += wBishopsCount * this.MGPieceValue[PieceType.Bishop];
-        mg[Color.White] += wRooksCount * this.MGPieceValue[PieceType.Rook];
-        mg[Color.White] += wQueens * this.MGPieceValue[PieceType.Queen];
-        mg[Color.White] += this.MGPieceValue[PieceType.King];
-        mg[Color.Black] += bPawnsCount * this.MGPieceValue[PieceType.Pawn];
-        mg[Color.Black] += bKnightsCount * this.MGPieceValue[PieceType.Knight];
-        mg[Color.Black] += bBishopsCount * this.MGPieceValue[PieceType.Bishop];
-        mg[Color.Black] += bRooksCount * this.MGPieceValue[PieceType.Rook];
-        mg[Color.Black] += bQueens * this.MGPieceValue[PieceType.Queen];
-        mg[Color.Black] += this.MGPieceValue[PieceType.King];
+        // // piece values
+        // mg[Color.White] += wPawnsCount * this.MGPieceValue[PieceType.Pawn];
+        // mg[Color.White] += wKnightsCount * this.MGPieceValue[PieceType.Knight];
+        // mg[Color.White] += wBishopsCount * this.MGPieceValue[PieceType.Bishop];
+        // mg[Color.White] += wRooksCount * this.MGPieceValue[PieceType.Rook];
+        // mg[Color.White] += wQueens * this.MGPieceValue[PieceType.Queen];
+        // mg[Color.White] += this.MGPieceValue[PieceType.King];
+        // mg[Color.Black] += bPawnsCount * this.MGPieceValue[PieceType.Pawn];
+        // mg[Color.Black] += bKnightsCount * this.MGPieceValue[PieceType.Knight];
+        // mg[Color.Black] += bBishopsCount * this.MGPieceValue[PieceType.Bishop];
+        // mg[Color.Black] += bRooksCount * this.MGPieceValue[PieceType.Rook];
+        // mg[Color.Black] += bQueens * this.MGPieceValue[PieceType.Queen];
+        // mg[Color.Black] += this.MGPieceValue[PieceType.King];
 
-        eg[Color.White] += wPawnsCount * this.EGPieceValue[PieceType.Pawn];
-        eg[Color.White] += wKnightsCount * this.EGPieceValue[PieceType.Knight];
-        eg[Color.White] += wBishopsCount * this.EGPieceValue[PieceType.Bishop];
-        eg[Color.White] += wRooksCount * this.EGPieceValue[PieceType.Rook];
-        eg[Color.White] += wQueens * this.EGPieceValue[PieceType.Queen];
-        eg[Color.White] += this.EGPieceValue[PieceType.King];
-        eg[Color.Black] += bPawnsCount * this.EGPieceValue[PieceType.Pawn];
-        eg[Color.Black] += bKnightsCount * this.EGPieceValue[PieceType.Knight];
-        eg[Color.Black] += bBishopsCount * this.EGPieceValue[PieceType.Bishop];
-        eg[Color.Black] += bRooksCount * this.EGPieceValue[PieceType.Rook];
-        eg[Color.Black] += bQueens * this.EGPieceValue[PieceType.Queen];
-        eg[Color.Black] += this.EGPieceValue[PieceType.King];
+        // eg[Color.White] += wPawnsCount * this.EGPieceValue[PieceType.Pawn];
+        // eg[Color.White] += wKnightsCount * this.EGPieceValue[PieceType.Knight];
+        // eg[Color.White] += wBishopsCount * this.EGPieceValue[PieceType.Bishop];
+        // eg[Color.White] += wRooksCount * this.EGPieceValue[PieceType.Rook];
+        // eg[Color.White] += wQueens * this.EGPieceValue[PieceType.Queen];
+        // eg[Color.White] += this.EGPieceValue[PieceType.King];
+        // eg[Color.Black] += bPawnsCount * this.EGPieceValue[PieceType.Pawn];
+        // eg[Color.Black] += bKnightsCount * this.EGPieceValue[PieceType.Knight];
+        // eg[Color.Black] += bBishopsCount * this.EGPieceValue[PieceType.Bishop];
+        // eg[Color.Black] += bRooksCount * this.EGPieceValue[PieceType.Rook];
+        // eg[Color.Black] += bQueens * this.EGPieceValue[PieceType.Queen];
+        // eg[Color.Black] += this.EGPieceValue[PieceType.King];
 
         // knight outposts
         // this should be updated to only count knights in the opponent's half of the board
@@ -1831,10 +1831,10 @@ class Khepri {
             eg[Color.Black] += this.EGKnightOutpost;
         }
 
-        const wKingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King]);
-        const bKingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + 6]);
-        const wKingFile = wKingSquare & 7;
-        const bKingFile = bKingSquare & 7;
+        // const wKingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King]);
+        // const bKingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + 6]);
+        // const wKingFile = wKingSquare & 7;
+        // const bKingFile = bKingSquare & 7;
 
         // bishop
         // while (wBishops) {
@@ -1847,10 +1847,13 @@ class Khepri {
         //     // center attacks bonus
         //     mg[Color.White] += this.MGCenterAttacks[centerAttacks];
 
-        //     // bonus for staying out of the center in the opening
-        //     mg[Color.White] += this.CenterManhattanDistance[square] * 4;
+        //     // mg[Color.White] -= this.EdgeDistance[square] * 5;
+        //     // eg[Color.White] += this.EdgeDistance[square] * 5;
 
-        //     eg[Color.White] += this.CenterManhattanDistance[square] * -2;
+        //     // bonus for staying out of the center in the opening
+        //     // mg[Color.White] += this.CenterManhattanDistance[square] * 4;
+
+        //     // eg[Color.White] += this.CenterManhattanDistance[square] * -2;
         // }
 
         // while (bBishops) {
@@ -1863,10 +1866,13 @@ class Khepri {
         //     // center attacks bonus
         //     mg[Color.Black] += this.MGCenterAttacks[centerAttacks];
 
-        //     // bonus for staying out of the center in the opening
-        //     mg[Color.Black] += this.CenterManhattanDistance[square] * 4;
+        //     // mg[Color.Black] -= this.EdgeDistance[square] * 5;
+        //     // eg[Color.Black] += this.EdgeDistance[square] * 5;
 
-        //     eg[Color.Black] += this.CenterManhattanDistance[square] * -2;
+        //     // bonus for staying out of the center in the opening
+        //     // mg[Color.Black] += this.CenterManhattanDistance[square] * 4;
+
+        //     // eg[Color.Black] += this.CenterManhattanDistance[square] * -2;
         // }
 
         // rook
@@ -1875,6 +1881,17 @@ class Khepri {
             wRooks = this.RemoveBit(wRooks, square);
 
             // mg[Color.White] -= this.EdgeDistance[square] * 5;
+            // const attacks = this.GenerateBishopAttacks(occupied, square);
+            // const numAttacks = this.CountBits(attacks);
+
+            // mg[Color.White] -= this.EdgeDistance[square] * 5;
+
+            // if (numAttacks <= 3 && square >> 3 === 7) {
+            //     if ((wKingFile < 4) === ((square & 7) < wKingFile)) {
+            //         mg[Color.White] -= 10;
+            //         eg[Color.White] -= 40;
+            //     }
+            // }
 
             // (semi-)open file bonus
             if ((this.fileMasks[square] & wPawns) === 0n) {
@@ -1892,6 +1909,17 @@ class Khepri {
             bRooks = this.RemoveBit(bRooks, square);
 
             // mg[Color.Black] -= this.EdgeDistance[square] * 5;
+            // const attacks = this.GenerateBishopAttacks(occupied, square);
+            // const numAttacks = this.CountBits(attacks);
+
+            // mg[Color.Black] -= this.EdgeDistance[square] * 5;
+
+            // if (numAttacks <= 3 && square >> 3 === 0) {
+            //     if ((bKingFile < 4) === ((square & 7) < bKingFile)) {
+            //         mg[Color.Black] -= 10;
+            //         eg[Color.Black] -= 40;
+            //     }
+            // }
 
             // (semi-)open file bonus
             if ((this.fileMasks[square] & bPawns) === 0n) {
@@ -1905,10 +1933,10 @@ class Khepri {
         }
 
         // king safety
-        mg[Color.White] += this.CenterManhattanDistance[wKingSquare] * 5;
-        mg[Color.Black] += this.CenterManhattanDistance[bKingSquare] * 5;
-        eg[Color.White] += this.CenterManhattanDistance[wKingSquare] * -5;
-        eg[Color.Black] += this.CenterManhattanDistance[bKingSquare] * -5;
+        // mg[Color.White] += (this.CenterManhattanDistance[wKingSquare] * 5) - (this.CornerSquares[wKingSquare] * 5);
+        // mg[Color.Black] += (this.CenterManhattanDistance[bKingSquare] * 5) - (this.CornerSquares[bKingSquare] * 5);
+        // eg[Color.White] += (this.CenterManhattanDistance[wKingSquare] * -5) - (this.CornerSquares[wKingSquare] * 15);
+        // eg[Color.Black] += (this.CenterManhattanDistance[bKingSquare] * -5) - (this.CornerSquares[bKingSquare] * 15);
 
         const opening = mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1];
         const endgame = eg[this.BoardState.SideToMove] - eg[this.BoardState.SideToMove ^ 1];
@@ -2001,7 +2029,7 @@ class Khepri {
 
             const endTime = Date.now();
 
-            console.log(`info depth ${depth} score ${score} nodes ${this.nodesSearched} nps ${(this.nodesSearched * 1000) / (endTime - startTime) | 0} time ${endTime - startTime} pv ${this.GetPv()}`);
+            console.log(`info depth ${depth} score cp ${score} nodes ${this.nodesSearched} nps ${(this.nodesSearched * 1000) / (endTime - startTime) | 0} time ${endTime - startTime} pv ${this.GetPv()}`);
         }
 
         console.log(`bestmove ${this.StringifyMove(this.pvArray[0][0])}`);
