@@ -1120,10 +1120,18 @@ class Khepri {
                 const movingPiece = this.BoardState.Squares[this.MoveFrom(move)] as Piece;
                 const capturedPiece = this.BoardState.Squares[this.MoveTo(move)] ?? { Type: PieceType.Pawn, Color: Color.White }; // if the piece from the squares is null, that means it's an en passant capture
 
-                scored.push({ move, score: this.MGPieceValue[capturedPiece.Type] - movingPiece.Type });
+                scored.push({ move, score: this.MGPieceValue[capturedPiece.Type] - movingPiece.Type + 10000 });
             }
             else {
-                scored.push({ move, score: 0 }); // random sorting for quiet moves, just because
+                if (move === this.killerMoves[this.BoardState.Ply][0]) {
+                    scored.push({ move, score: 9000 });
+                }
+                else if (move === this.killerMoves[this.BoardState.Ply][1]) {
+                    scored.push({ move, score: 8000 });
+                }
+                else {
+                    scored.push({ move, score: 0 });
+                }
             }
         }
 
@@ -1958,6 +1966,7 @@ class Khepri {
     private nodesSearched = 0;
     private pvArray: number[][] = Array(this.MAXPLY).fill(0).map(() => Array(this.MAXPLY).fill(0));
     private pvLength = Array(this.MAXPLY).fill(0);
+    private killerMoves = Array(this.MAXPLY).fill(0).map(() => Array(2).fill(0));
 
     GetPv() {
         let pv = "";
@@ -2123,6 +2132,13 @@ class Khepri {
 
             if (alpha >= beta) {
                 hashFlag = HashFlag.Beta;
+
+                // Add killer
+                if (!this.IsCapture(move)) {
+                    this.killerMoves[this.BoardState.Ply][1] = this.killerMoves[this.BoardState.Ply][0];
+                    this.killerMoves[this.BoardState.Ply][0] = move;
+                }
+
                 break;
             }
 
