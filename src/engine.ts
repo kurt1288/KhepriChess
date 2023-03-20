@@ -2090,7 +2090,7 @@ class Khepri {
             ttMove = entry.Move;
         }
 
-        // const staticEval = this.Evaluate();
+        const staticEval = this.Evaluate();
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)]), this.BoardState.SideToMove ^ 1);
 
         const moves = this.SortMoves(this.GenerateMoves(), ttMove);
@@ -2100,9 +2100,9 @@ class Khepri {
             // const move = moves[i].move;
 
             // futility pruning
-            // if (!isPVNode && !inCheck && depth <= 10 && staticEval + 35 * depth < alpha) {
-            //     continue;
-            // }
+            if (legalMoves > 0 && depth <= 10 && !isPVNode && !inCheck && !this.IsCapture(move) && staticEval + 35 * depth < alpha) {
+                continue;
+            }
 
             if (!this.MakeMove(move)) {
                 this.UnmakeMove(move);
