@@ -2111,10 +2111,26 @@ class Khepri {
 
             legalMoves++;
 
-            let score = -this.NegaScout(-b, -alpha, depth - 1);
+            let score = -this.INFINITY;
+            let E = inCheck ? 1 : 0;
 
-            if ((score > alpha) && (score < beta) && (i > 1)) {
-                score = -this.NegaScout(-beta, -alpha, depth - 1);
+            if (depth > 3 && legalMoves > 4) {
+                let R = 1 / (4 / depth) | 0;
+                R = Math.max(0, R);
+
+                score = -this.NegaScout(-alpha - 1, -alpha, depth - 1 - R + E);
+
+                // If the search failed high, do another full-depth search
+                if (score > alpha && R > 0) {
+                    score = -this.NegaScout(-b, -alpha, depth - 1 + E);
+                }
+            }
+            else {
+                score = -this.NegaScout(-b, -alpha, depth - 1 + E);
+
+                if ((score > alpha) && (score < beta) && (i > 1)) {
+                    score = -this.NegaScout(-beta, -alpha, depth - 1 + E);
+                }
             }
 
             this.UnmakeMove(move);
