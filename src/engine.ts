@@ -2062,6 +2062,10 @@ class Khepri {
         
         this.pvLength[this.BoardState.Ply] = this.BoardState.Ply;
 
+        if (this.BoardState.Ply > 0 && (this.IsRepetition() || this.BoardState.HalfMoves > 100)) {
+            return 0;
+        }
+
         if (depth <= 0) {
             // return this.Evaluate();
             return this.Quiescence(alpha, beta);
@@ -2217,6 +2221,16 @@ class Khepri {
         }
 
         return bestScore;
+    }
+
+    IsRepetition() {
+        for (let i = this.boardStates.length - this.BoardState.HalfMoves; i < this.boardStates.length - 1; i++) {
+            if (this.boardStates[i]?.Hash === this.BoardState.Hash) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
