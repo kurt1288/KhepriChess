@@ -1112,13 +1112,15 @@ class Khepri {
 
         for (let i = 0; i < moves.length; i++) {
             const move = moves[i];
+            const from = this.MoveFrom(move);
+            const to = this.MoveTo(move);
 
             if (move === ttMove) {
                 scored.push({ move: ttMove, score: this.INFINITY }); // ttMove should be scored highest so that it's played first
             }
             else if (this.IsCapture(move)) {
-                const movingPiece = this.BoardState.Squares[this.MoveFrom(move)] as Piece;
-                const capturedPiece = this.BoardState.Squares[this.MoveTo(move)] ?? { Type: PieceType.Pawn, Color: Color.White }; // if the piece from the squares is null, that means it's an en passant capture
+                const movingPiece = this.BoardState.Squares[from] as Piece;
+                const capturedPiece = this.BoardState.Squares[to] ?? { Type: PieceType.Pawn, Color: Color.White }; // if the piece from the squares is null, that means it's an en passant capture
 
                 scored.push({ move, score: this.MGPieceValue[capturedPiece.Type] - movingPiece.Type + 10000 });
             }
@@ -1130,7 +1132,7 @@ class Khepri {
                     scored.push({ move, score: 8000 });
                 }
                 else {
-                    scored.push({ move, score: 0 });
+                    scored.push({ move, score: this.historyMoves[this.BoardState.SideToMove][from][to] });
                 }
             }
         }
@@ -1967,6 +1969,7 @@ class Khepri {
     private pvArray: number[][] = Array(this.MAXPLY).fill(0).map(() => Array(this.MAXPLY).fill(0));
     private pvLength = Array(this.MAXPLY).fill(0);
     private killerMoves = Array(this.MAXPLY).fill(0).map(() => Array(2).fill(0));
+    private historyMoves = Array(2).fill(0).map(() => Array(64).fill(0).map(() => Array(64).fill(0))); // 2 64x64 arrays
 
     GetPv() {
         let pv = "";
@@ -2078,6 +2081,7 @@ class Khepri {
         let b = beta;
         let ttMove = 0;
         let legalMoves = 0;
+        let quietMoves = [];
 
         const entry = this.GetEntry(this.BoardState.Hash);
 
@@ -2153,13 +2157,23 @@ class Khepri {
             if (alpha >= beta) {
                 hashFlag = HashFlag.Beta;
 
-                // Add killer
+                // Add killer and history moves
                 if (!this.IsCapture(move)) {
                     this.killerMoves[this.BoardState.Ply][1] = this.killerMoves[this.BoardState.Ply][0];
                     this.killerMoves[this.BoardState.Ply][0] = move;
+
+                    this.historyMoves[this.BoardState.SideToMove][this.MoveFrom(move)][this.MoveTo(move)] += depth * depth;
+
+                    for (let i = 0; i < quietMoves.length; i++) {
+                        this.historyMoves[this.BoardState.SideToMove][this.MoveFrom(quietMoves[i])][this.MoveTo(quietMoves[i])] += -depth * depth;
+                    }
                 }
 
                 break;
+            }
+
+            if (!this.IsCapture(move)) {
+                quietMoves.push(move);
             }
 
             b = alpha + 1;
