@@ -1107,7 +1107,7 @@ class Khepri {
         return moveList;
     }
 
-    SortMoves(moves: number[], ttMove: number) {
+    SortMoves(moves: number[], ttMove: number, previousMove: number) {
         let scored = [];
 
         for (let i = 0; i < moves.length; i++) {
@@ -1130,6 +1130,9 @@ class Khepri {
                 }
                 else if (move === this.killerMoves[this.BoardState.Ply][1]) {
                     scored.push({ move, score: 8000 });
+                }
+                else if (move === this.counterMoves[this.MoveFrom(previousMove)][this.MoveTo(previousMove)]) {
+                    scored.push({ move, score: 7000 });
                 }
                 else {
                     scored.push({ move, score: this.historyMoves[this.BoardState.SideToMove][from][to] });
@@ -1970,6 +1973,7 @@ class Khepri {
     private pvLength = Array(this.MAXPLY).fill(0);
     private killerMoves = Array(this.MAXPLY).fill(0).map(() => Array(2).fill(0));
     private historyMoves = Array(2).fill(0).map(() => Array(64).fill(0).map(() => Array(64).fill(0))); // 2 64x64 arrays
+    private counterMoves = Array(64).fill(0).map(() => Array(64).fill(0));
 
     GetPv() {
         let pv = "";
@@ -2018,7 +2022,7 @@ class Khepri {
                     break;
                 }
 
-                score = this.NegaScout(alpha, beta, depth);
+                score = this.NegaScout(alpha, beta, depth, 0);
 
                 // Adjust the aspiration window depending on whether the search failed high or low, or break from the loop if it didn't.
                 if (score <= alpha) {
@@ -2047,7 +2051,7 @@ class Khepri {
         console.log(`bestmove ${this.StringifyMove(this.pvArray[0][0])}`);
     }
 
-    NegaScout(alpha: number, beta: number, depth: number) {
+    NegaScout(alpha: number, beta: number, depth: number, previousMove: number) {
         // Check whether search time is up every 1000 nodes
         if (this.nodesSearched % 1000 === 0) {
             this.CheckTime();
@@ -2071,7 +2075,7 @@ class Khepri {
 
         if (depth <= 0) {
             // return this.Evaluate();
-            return this.Quiescence(alpha, beta);
+            return this.Quiescence(alpha, beta, previousMove);
         }
 
         const isPVNode = beta - alpha > 1;
@@ -2097,7 +2101,7 @@ class Khepri {
         const staticEval = this.Evaluate();
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)]), this.BoardState.SideToMove ^ 1);
 
-        const moves = this.SortMoves(this.GenerateMoves(), ttMove);
+        const moves = this.SortMoves(this.GenerateMoves(), ttMove, previousMove);
 
         for (let i = 0; i < moves.length; i++) {
             const move = this.NextMove(moves, i).move;
@@ -2122,18 +2126,18 @@ class Khepri {
                 let R = 1 / (4 / depth) | 0;
                 R = Math.max(0, R);
 
-                score = -this.NegaScout(-alpha - 1, -alpha, depth - 1 - R + E);
+                score = -this.NegaScout(-alpha - 1, -alpha, depth - 1 - R + E, move);
 
                 // If the search failed high, do another full-depth search
                 if (score > alpha && R > 0) {
-                    score = -this.NegaScout(-b, -alpha, depth - 1 + E);
+                    score = -this.NegaScout(-b, -alpha, depth - 1 + E, move);
                 }
             }
             else {
-                score = -this.NegaScout(-b, -alpha, depth - 1 + E);
+                score = -this.NegaScout(-b, -alpha, depth - 1 + E, move);
 
                 if ((score > alpha) && (score < beta) && (i > 1)) {
-                    score = -this.NegaScout(-beta, -alpha, depth - 1 + E);
+                    score = -this.NegaScout(-beta, -alpha, depth - 1 + E, move);
                 }
             }
 
@@ -2157,10 +2161,12 @@ class Khepri {
             if (alpha >= beta) {
                 hashFlag = HashFlag.Beta;
 
-                // Add killer and history moves
+                // Add killer, history, and counter moves
                 if (!this.IsCapture(move)) {
                     this.killerMoves[this.BoardState.Ply][1] = this.killerMoves[this.BoardState.Ply][0];
                     this.killerMoves[this.BoardState.Ply][0] = move;
+
+                    this.counterMoves[this.MoveFrom(previousMove)][this.MoveTo(previousMove)] = move;
 
                     this.historyMoves[this.BoardState.SideToMove][this.MoveFrom(move)][this.MoveTo(move)] += depth * depth;
 
@@ -2194,7 +2200,7 @@ class Khepri {
         return bestScore;
     }
 
-    Quiescence(alpha: number, beta: number) {
+    Quiescence(alpha: number, beta: number, previousMove: number) {
         if (this.nodesSearched % 1000 === 0) {
             this.CheckTime();
 
@@ -2220,7 +2226,7 @@ class Khepri {
         }
 
         let bestScore = staticEval;
-        const moves = this.SortMoves(this.GenerateMoves(true), 0);
+        const moves = this.SortMoves(this.GenerateMoves(true), 0, previousMove);
 
         for (let i = 0; i < moves.length; i++) {
             const move = this.NextMove(moves, i).move;
@@ -2234,7 +2240,7 @@ class Khepri {
                 continue;
             }
 
-            let score = -this.Quiescence(-beta, -alpha);
+            let score = -this.Quiescence(-beta, -alpha, move);
             this.UnmakeMove(move);
 
             if (score > bestScore) {
