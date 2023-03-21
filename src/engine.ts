@@ -2231,9 +2231,10 @@ class Khepri {
         for (let i = 0; i < moves.length; i++) {
             const move = this.NextMove(moves, i).move;
 
-            // if (staticEval + 200 + (Number(this.IsPromotion(move)) + this.MGPieceValue[PieceType.Queen]) < alpha) {
-            //     continue;
-            // }
+            // delta pruning
+            if (staticEval + 150 + this.MGPieceValue[PieceType.Queen] < alpha) {
+                continue;
+            }
 
             if (!this.MakeMove(move)) {
                 this.UnmakeMove(move);
