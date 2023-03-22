@@ -1281,7 +1281,8 @@ class Khepri {
         const rookPiece = this.BoardState.Squares[rookFrom] as Piece;
         this.MovePiece(rookPiece, rookFrom, rookTo);
 
-        this.BoardState.Hash ^= this.Zobrist.Pieces[piece.Color][PieceType.Rook][rookFrom] ^ this.Zobrist.Pieces[piece.Color][PieceType.Rook][rookTo];
+        this.BoardState.Hash ^= this.Zobrist.Pieces[piece.Color][PieceType.Rook][rookFrom] ^ this.Zobrist.Pieces[piece.Color][PieceType.Rook][rookTo]
+            ^ this.Zobrist.Pieces[piece.Color][PieceType.King][kingTo] ^ this.Zobrist.Pieces[piece.Color][PieceType.King][from];
     }
 
     UndoCastle(from: Square, to: Square) {
@@ -1349,7 +1350,7 @@ class Khepri {
                 this.RemovePiece(captured.Type, captured.Color, captureSquare);
                 this.BoardState.HalfMoves = 0;
 
-                this.BoardState.Hash ^= this.Zobrist.Pieces[captured.Color][captured.Type][to];
+                this.BoardState.Hash ^= this.Zobrist.Pieces[captured.Color][captured.Type][captureSquare];
 
                 this.BoardState.Phase += this.PhaseValues[captured.Type];
 
@@ -1529,6 +1530,7 @@ class Khepri {
     // Default to a 32 MB hash table. Calculate how many 16-byte entries can fit
     TranspositionTables: TTEntry[] = Array((32 * 1024 * 1024) / 16).fill(null);
     TTSize = BigInt((32 * 1024 * 1024) / 16); // as bigint for faster/easier operations against hashes
+    TTUsed = 0;
 
     ResiseTranspositionTable() {
 
@@ -1538,7 +1540,13 @@ class Khepri {
      * Store an entry in the transposition table. Collisions are simply always replaced
      */
     StoreEntry(hash: bigint, depth: number, move: number, score: number, flag: HashFlag) {
-        this.TranspositionTables[Number(hash % this.TTSize)] = {
+        const index = Number(hash % this.TTSize);
+        
+        if (this.TranspositionTables[index] === null) {
+            this.TTUsed++;
+        }
+        
+        this.TranspositionTables[index] = {
             Hash: hash,
             Move: move,
             Depth: depth,
@@ -2045,7 +2053,7 @@ class Khepri {
 
             const endTime = Date.now();
 
-            console.log(`info depth ${depth} score cp ${score} nodes ${this.nodesSearched} nps ${(this.nodesSearched * 1000) / (endTime - startTime) | 0} time ${endTime - startTime} pv ${this.GetPv()}`);
+            console.log(`info depth ${depth} score cp ${score} nodes ${this.nodesSearched} nps ${(this.nodesSearched * 1000) / (endTime - startTime) | 0} hashfull ${1000 * this.TTUsed / Number(this.TTSize) | 0} time ${endTime - startTime} pv ${this.GetPv()}`);
         }
 
         console.log(`bestmove ${this.StringifyMove(this.pvArray[0][0])}`);
