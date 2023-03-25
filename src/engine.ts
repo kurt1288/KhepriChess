@@ -2015,6 +2015,14 @@ class Khepri {
         this.nodesSearched = 0;
         this.BoardState.Ply = 0;
 
+        for (let color = Color.White; color <= Color.Black; color++) {
+            for (let from = Square.a8; from <= Square.h1; from++) {
+                for (let to = Square.a8; to <= Square.h1; to++) {
+                    this.historyMoves[color][from][to] /= 2;
+                }
+            }
+        }
+
         // Iterative deepening
         for (let depth = 1; depth <= targetDepth; depth++) {
             let margin = 10;
