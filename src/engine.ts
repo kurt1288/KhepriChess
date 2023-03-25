@@ -2231,6 +2231,19 @@ class Khepri {
             return 0;
         }
 
+        let hashFlag = HashFlag.Alpha;
+        let ttMove = 0;
+        const entry = this.GetEntry(this.BoardState.Hash);
+
+        if (entry && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
+            return entry.Score;
+        }
+
+        // Even if the entry doesn't contain a valid score to return, we can still use the move for move ordering
+        if (entry) {
+            ttMove = entry.Move;
+        }
+
         const staticEval = this.Evaluate();
 
         if (staticEval >= beta) {
@@ -2242,7 +2255,8 @@ class Khepri {
         }
 
         let bestScore = staticEval;
-        const moves = this.SortMoves(this.GenerateMoves(true), 0, previousMove);
+        let bestMove = 0;
+        const moves = this.SortMoves(this.GenerateMoves(true), ttMove, previousMove);
 
         for (let i = 0; i < moves.length; i++) {
             const move = this.NextMove(moves, i).move;
@@ -2262,16 +2276,21 @@ class Khepri {
 
             if (score > bestScore) {
                 bestScore = score;
+                bestMove = move;
             }
 
             if (score >= beta) {
+                hashFlag = HashFlag.Beta;
                 break;
             }
 
             if (score > alpha) {
                 alpha = score;
+                hashFlag = HashFlag.Exact;
             }                
         }
+
+        this.StoreEntry(this.BoardState.Hash, 0, bestMove, bestScore, hashFlag);
 
         return bestScore;
     }
