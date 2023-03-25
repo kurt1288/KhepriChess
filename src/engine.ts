@@ -1475,6 +1475,40 @@ class Khepri {
         this.BoardState.PawnHash = state.PawnHash;
     }
 
+    MakeNullMove() {
+        this.boardStates.push({
+            CastlingRights: this.BoardState.CastlingRights,
+            EnPassSq: this.BoardState.EnPassSq,
+            Hash: this.BoardState.Hash,
+            HalfMoves: this.BoardState.HalfMoves,
+            PawnHash: this.BoardState.PawnHash,
+            Phase: this.BoardState.Phase,
+        });
+
+        if (this.BoardState.EnPassSq !== Square.no_sq) {
+            this.BoardState.Hash ^= this.Zobrist.EnPassant[this.BoardState.EnPassSq];
+            this.BoardState.EnPassSq = Square.no_sq;
+        }
+
+        this.BoardState.HalfMoves = 0;
+        this.BoardState.SideToMove ^= 1;
+        this.BoardState.Hash ^= this.Zobrist.SideToMove;
+        this.BoardState.Ply++;
+    }
+
+    UnmakeNullMove() {
+        const state = this.boardStates.pop() as StateCopy;
+
+        this.BoardState.CastlingRights = state.CastlingRights;
+        this.BoardState.EnPassSq = state.EnPassSq;
+        this.BoardState.HalfMoves = state.HalfMoves;
+        this.BoardState.SideToMove ^= 1;
+        this.BoardState.Hash = state.Hash;
+        this.BoardState.PawnHash = state.PawnHash;
+        this.BoardState.Ply--;
+        this.BoardState.Phase = state.Phase;
+    }
+
     IsSquareAttacked(square: Square, side: Color) {
         if (this.PawnAttacks[square + (64 * (side ^ 1))] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * side)]) {
             return true;
@@ -2038,7 +2072,7 @@ class Khepri {
                     break;
                 }
 
-                score = this.NegaScout(alpha, beta, depth, 0);
+                score = this.NegaScout(alpha, beta, depth, 0, true);
 
                 // Adjust the aspiration window depending on whether the search failed high or low, or break from the loop if it didn't.
                 if (score <= alpha) {
@@ -2067,7 +2101,7 @@ class Khepri {
         console.log(`bestmove ${this.StringifyMove(this.pvArray[0][0])}`);
     }
 
-    NegaScout(alpha: number, beta: number, depth: number, previousMove: number) {
+    NegaScout(alpha: number, beta: number, depth: number, previousMove: number, nullAllowed: boolean): number {
         // Check whether search time is up every 1000 nodes
         if (this.nodesSearched % 1000 === 0) {
             this.CheckTime();
@@ -2117,6 +2151,22 @@ class Khepri {
         const staticEval = this.Evaluate();
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)]), this.BoardState.SideToMove ^ 1);
 
+        if (!inCheck && !isPVNode && nullAllowed && depth >= 2 && staticEval >= beta) {
+            this.MakeNullMove();
+
+            const R = 3 + Math.floor(depth / 5);
+            let score = -this.NegaScout(-beta, -beta + 1, depth - 1 - R, 0, false);
+
+            this.UnmakeNullMove();
+
+            if (score >= beta) {
+                if (Math.abs(score) > (this.INFINITY - this.BoardState.Ply)) {
+                    return beta;
+                }
+                return score;
+            }
+        }
+
         const moves = this.SortMoves(this.GenerateMoves(), ttMove, previousMove);
 
         for (let i = 0; i < moves.length; i++) {
@@ -2142,18 +2192,18 @@ class Khepri {
                 let R = 1 / (4 / depth) | 0;
                 R = Math.max(0, R);
 
-                score = -this.NegaScout(-alpha - 1, -alpha, depth - 1 - R + E, move);
+                score = -this.NegaScout(-alpha - 1, -alpha, depth - 1 - R + E, move, true);
 
                 // If the search failed high, do another full-depth search
                 if (score > alpha && R > 0) {
-                    score = -this.NegaScout(-b, -alpha, depth - 1 + E, move);
+                    score = -this.NegaScout(-b, -alpha, depth - 1 + E, move, true);
                 }
             }
             else {
-                score = -this.NegaScout(-b, -alpha, depth - 1 + E, move);
+                score = -this.NegaScout(-b, -alpha, depth - 1 + E, move, true);
 
                 if ((score > alpha) && (score < beta) && (i > 1)) {
-                    score = -this.NegaScout(-beta, -alpha, depth - 1 + E, move);
+                    score = -this.NegaScout(-beta, -alpha, depth - 1 + E, move, true);
                 }
             }
 
