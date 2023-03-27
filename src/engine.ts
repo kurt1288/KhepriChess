@@ -123,6 +123,13 @@ interface TTEntry {
     Flag: HashFlag // 1 byte
 }
 
+interface PawnEntry {
+    Hash: bigint
+    Mg: number
+    Eg: number
+    SideToMove: Color
+}
+
 class Khepri {
     constructor() {
         this.Init();
@@ -1601,6 +1608,36 @@ class Khepri {
 
     /****************************
      * 
+     *     Pawn Hash Table
+     *
+     ****************************/
+
+    PawnTable: PawnEntry[] = Array((4 * 1024 * 1024) / 16).fill(null); // 4 MB table size
+    PawnTableSize = BigInt((4 * 1024 * 1024) / 16);
+
+    StorePawnHash(hash: bigint, mg: number, eg: number, side: Color) {
+        const index = Number(hash % this.PawnTableSize);
+        
+        this.PawnTable[index] = {
+            Hash: hash,
+            Mg: mg,
+            Eg: eg,
+            SideToMove: side,
+        }
+    }
+
+    GetPawnEntry(hash: bigint): PawnEntry | false {
+        const entry = this.PawnTable[Number(hash % this.PawnTableSize)];
+
+        if (entry && entry.Hash !== hash) {
+            return false;
+        }
+
+        return entry;
+    }
+
+    /****************************
+     * 
      *        Evaluation
      *
      ****************************/
@@ -1811,10 +1848,14 @@ class Khepri {
         let eg = [0, 0];
         let phase = this.BoardState.Phase;
         let occupied = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
+        let pieces = occupied & ~(this.BoardState.PiecesBB[PieceType.Pawn] | this.BoardState.PiecesBB[PieceType.Pawn + 6]);
 
-        while (occupied) {
-            let square = this.GetLS1B(occupied);
-            occupied = this.RemoveBit(occupied, square);
+        // pawns are evaluated separately
+        const pawnScore = this.EvaluatePawns();
+
+        while (pieces) {
+            let square = this.GetLS1B(pieces);
+            pieces = this.RemoveBit(pieces, square);
             const piece = this.BoardState.Squares[square] as Piece;
 
             // Because the PST are from white's perspective, we have to flip the square if the piece is black's
@@ -1993,13 +2034,54 @@ class Khepri {
         // eg[Color.White] += (this.CenterManhattanDistance[wKingSquare] * -5) - (this.CornerSquares[wKingSquare] * 15);
         // eg[Color.Black] += (this.CenterManhattanDistance[bKingSquare] * -5) - (this.CornerSquares[bKingSquare] * 15);
 
-        const opening = mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1];
-        const endgame = eg[this.BoardState.SideToMove] - eg[this.BoardState.SideToMove ^ 1];
+        const opening = mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1] + pawnScore.opening;
+        const endgame = eg[this.BoardState.SideToMove] - eg[this.BoardState.SideToMove ^ 1] + pawnScore.endgame;
         
         phase = ((phase * 256 + (this.PhaseTotal / 2)) / this.PhaseTotal) | 0;
 
         // tapered eval
         return (((opening * (256 - phase)) + (endgame * phase)) / 256 | 0);
+    }
+
+    EvaluatePawns() {
+        // Check pawn hash table
+        const pawnEntry = this.GetPawnEntry(this.BoardState.PawnHash);
+
+        // if there's an entry, that means the stored hash matches the current hash and we can use the pawn scores
+        if (pawnEntry) {
+            // if the current side to move doesn't match the stored value, the entry's scores are from the other stm's point of view
+            if (pawnEntry.SideToMove !== this.BoardState.SideToMove) {
+                return { opening: pawnEntry.Mg * -1, endgame: pawnEntry.Eg * -1 };
+            }
+
+            return { opening: pawnEntry.Mg, endgame: pawnEntry.Eg };
+        }
+
+        // the pawn hash entry isn't valid, so we have to calculate the pawn score
+        let mg = [0, 0];
+        let eg = [0, 0];
+        let pawns = this.BoardState.PiecesBB[PieceType.Pawn] | this.BoardState.PiecesBB[PieceType.Pawn + 6];
+
+        while (pawns) {
+            let square = this.GetLS1B(pawns);
+            pawns = this.RemoveBit(pawns, square);
+            const piece = this.BoardState.Squares[square] as Piece;
+
+            if (piece.Color === Color.Black) {
+                square ^= 56;
+            }
+
+            // PST and material scores
+            mg[piece.Color] += this.PST[0][PieceType.Pawn][square] + this.MGPieceValue[PieceType.Pawn];
+            eg[piece.Color] += this.PST[1][PieceType.Pawn][square] + this.EGPieceValue[PieceType.Pawn];
+        }
+
+        const opening = mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1];
+        const endgame = eg[this.BoardState.SideToMove] - eg[this.BoardState.SideToMove ^ 1];
+
+        this.StorePawnHash(this.BoardState.PawnHash, opening, endgame, this.BoardState.SideToMove);
+
+        return { opening, endgame };
     }
 
     /****************************
