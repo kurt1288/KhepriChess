@@ -1355,7 +1355,7 @@ class Khepri {
                 this.BoardState.Phase += this.PhaseValues[captured.Type];
 
                 if (captured.Type === PieceType.Pawn) {
-                    this.BoardState.PawnHash ^= this.Zobrist.Pieces[captured.Color][captured.Type][to];
+                    this.BoardState.PawnHash ^= this.Zobrist.Pieces[captured.Color][captured.Type][captureSquare];
                 }
             }
     
