@@ -1877,7 +1877,9 @@ class Khepri {
                     break;
                 }
                 case PieceType.Rook: {
-                    // (semi-)open file bonus
+                    // (SEMI-) OPEN FILE
+                    // First condition checks for friendly pawns on the same file (semi-open file)
+                    // Second condition checks for enemy pawns on the same file (open file)
                     if ((this.fileMasks[actualSquare] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) === 0n) {
                         if ((this.fileMasks[actualSquare] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * (piece.Color ^ 1))]) === 0n) {
                             mg[piece.Color] += 30;
