@@ -1874,48 +1874,25 @@ class Khepri {
                         mg[piece.Color] += this.MGKnightOutpost;
                         eg[piece.Color] += this.EGKnightOutpost;
                     }
+                    break;
+                }
+                case PieceType.Rook: {
+                    // (semi-)open file bonus
+                    if ((this.fileMasks[actualSquare] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) === 0n) {
+                        if ((this.fileMasks[actualSquare] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * (piece.Color ^ 1))]) === 0n) {
+                            mg[piece.Color] += 30;
+                        }
+                        else {
+                            mg[piece.Color] += 15;
+                        }
+                    }
+                    break;
                 }
             }
 
             // PST and material scores
             mg[piece.Color] += this.PST[0][piece.Type][square] + this.MGPieceValue[piece.Type];
             eg[piece.Color] += this.PST[1][piece.Type][square] + this.EGPieceValue[piece.Type];
-        }
-
-        let wPawns = this.BoardState.PiecesBB[PieceType.Pawn];
-        let bPawns = this.BoardState.PiecesBB[PieceType.Pawn + 6];
-        let wRooks = this.BoardState.PiecesBB[PieceType.Rook];
-        let bRooks = this.BoardState.PiecesBB[PieceType.Rook + 6];
-
-        // rook
-        while (wRooks) {
-            let square = this.GetLS1B(wRooks);
-            wRooks = this.RemoveBit(wRooks, square);
-
-            // (semi-)open file bonus
-            if ((this.fileMasks[square] & wPawns) === 0n) {
-                if ((this.fileMasks[square] & bPawns) === 0n) {
-                    mg[Color.White] += 30;
-                }
-                else {
-                    mg[Color.White] += 15;
-                }
-            }
-        }
-
-        while (bRooks) {
-            let square = this.GetLS1B(bRooks);
-            bRooks = this.RemoveBit(bRooks, square);
-
-            // (semi-)open file bonus
-            if ((this.fileMasks[square] & bPawns) === 0n) {
-                if ((this.fileMasks[square] & wPawns) === 0n) {
-                    mg[Color.Black] += 30;
-                }
-                else {
-                    mg[Color.Black] += 15;
-                }
-            }
         }
 
         const opening = mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1] + pawnScore.opening;
