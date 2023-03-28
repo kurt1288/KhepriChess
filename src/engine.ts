@@ -2118,9 +2118,16 @@ class Khepri {
             const move = this.NextMove(moves, i).move;
             // const move = moves[i].move;
 
-            // futility pruning
-            if (legalMoves > 0 && depth <= 10 && !isPVNode && !inCheck && !this.IsCapture(move) && !this.IsPromotion(move) && staticEval + 35 * depth < alpha) {
-                continue;
+            if (!isPVNode && !inCheck && !this.IsCapture(move) && !this.IsPromotion(move)) {
+                // futility pruning
+                if (depth <= 10 && legalMoves > 0 && staticEval + 35 * depth < alpha) {
+                    continue;
+                }
+
+                // late move pruning
+                if (depth <= 2 && legalMoves > 7 * depth) {
+                    continue;
+                }
             }
 
             if (!this.MakeMove(move)) {
