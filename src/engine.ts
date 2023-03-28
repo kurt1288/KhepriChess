@@ -1855,12 +1855,26 @@ class Khepri {
 
         while (pieces) {
             let square = this.GetLS1B(pieces);
+            const actualSquare = square;
             pieces = this.RemoveBit(pieces, square);
             const piece = this.BoardState.Squares[square] as Piece;
 
             // Because the PST are from white's perspective, we have to flip the square if the piece is black's
             if (piece.Color === Color.Black) {
                 square ^= 56;
+            }
+
+            switch (piece.Type) {
+                case PieceType.Knight: {
+                    // OUTPOSTS:
+                    // First condition checks if the square is defended by a pawn,
+                    // second condition checks if the square is attacked by an enemy pawn
+                    if ((this.PawnAttacks[actualSquare + (64 * (piece.Color ^ 1))] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)])
+                        && !(this.PawnAttacks[actualSquare + (64 * (piece.Color))] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * (piece.Color ^ 1))])) {
+                        mg[piece.Color] += this.MGKnightOutpost;
+                        eg[piece.Color] += this.EGKnightOutpost;
+                    }
+                }
             }
 
             // PST and material scores
@@ -1870,124 +1884,13 @@ class Khepri {
 
         let wPawns = this.BoardState.PiecesBB[PieceType.Pawn];
         let bPawns = this.BoardState.PiecesBB[PieceType.Pawn + 6];
-        let wKnights = this.BoardState.PiecesBB[PieceType.Knight];
-        let bKnights = this.BoardState.PiecesBB[PieceType.Knight + 6];
-        // let wBishops = this.BoardState.PiecesBB[PieceType.Bishop];
-        // let bBishops = this.BoardState.PiecesBB[PieceType.Bishop + 6];
         let wRooks = this.BoardState.PiecesBB[PieceType.Rook];
         let bRooks = this.BoardState.PiecesBB[PieceType.Rook + 6];
-
-        // const wPawnsCount = this.CountBits(wPawns);
-        // const wKnightsCount = this.CountBits(wKnights);
-        // const wBishopsCount = this.CountBits(wBishops);
-        // const wRooksCount = this.CountBits(wRooks);
-        // const wQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen]);
-        // const bPawnsCount = this.CountBits(bPawns);
-        // const bKnightsCount = this.CountBits(bKnights);
-        // const bBishopsCount = this.CountBits(bBishops);
-        // const bRooksCount = this.CountBits(bRooks);
-        // const bQueens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen + 6]);
-
-        // // piece values
-        // mg[Color.White] += wPawnsCount * this.MGPieceValue[PieceType.Pawn];
-        // mg[Color.White] += wKnightsCount * this.MGPieceValue[PieceType.Knight];
-        // mg[Color.White] += wBishopsCount * this.MGPieceValue[PieceType.Bishop];
-        // mg[Color.White] += wRooksCount * this.MGPieceValue[PieceType.Rook];
-        // mg[Color.White] += wQueens * this.MGPieceValue[PieceType.Queen];
-        // mg[Color.White] += this.MGPieceValue[PieceType.King];
-        // mg[Color.Black] += bPawnsCount * this.MGPieceValue[PieceType.Pawn];
-        // mg[Color.Black] += bKnightsCount * this.MGPieceValue[PieceType.Knight];
-        // mg[Color.Black] += bBishopsCount * this.MGPieceValue[PieceType.Bishop];
-        // mg[Color.Black] += bRooksCount * this.MGPieceValue[PieceType.Rook];
-        // mg[Color.Black] += bQueens * this.MGPieceValue[PieceType.Queen];
-        // mg[Color.Black] += this.MGPieceValue[PieceType.King];
-
-        // eg[Color.White] += wPawnsCount * this.EGPieceValue[PieceType.Pawn];
-        // eg[Color.White] += wKnightsCount * this.EGPieceValue[PieceType.Knight];
-        // eg[Color.White] += wBishopsCount * this.EGPieceValue[PieceType.Bishop];
-        // eg[Color.White] += wRooksCount * this.EGPieceValue[PieceType.Rook];
-        // eg[Color.White] += wQueens * this.EGPieceValue[PieceType.Queen];
-        // eg[Color.White] += this.EGPieceValue[PieceType.King];
-        // eg[Color.Black] += bPawnsCount * this.EGPieceValue[PieceType.Pawn];
-        // eg[Color.Black] += bKnightsCount * this.EGPieceValue[PieceType.Knight];
-        // eg[Color.Black] += bBishopsCount * this.EGPieceValue[PieceType.Bishop];
-        // eg[Color.Black] += bRooksCount * this.EGPieceValue[PieceType.Rook];
-        // eg[Color.Black] += bQueens * this.EGPieceValue[PieceType.Queen];
-        // eg[Color.Black] += this.EGPieceValue[PieceType.King];
-
-        // knight outposts
-        // this should be updated to only count knights in the opponent's half of the board
-        if (wPawns & (this.Shift(wKnights, Direction.SOUTHEAST) | this.Shift(wKnights, Direction.SOUTHWEST))) {
-            mg[Color.White] += this.MGKnightOutpost;
-            eg[Color.White] += this.EGKnightOutpost;
-        }
-
-        if (bPawns & (this.Shift(bKnights, Direction.NORTHEAST) | this.Shift(bKnights, Direction.NORTHWEST))) {
-            mg[Color.Black] += this.MGKnightOutpost;
-            eg[Color.Black] += this.EGKnightOutpost;
-        }
-
-        // const wKingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King]);
-        // const bKingSquare = this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + 6]);
-        // const wKingFile = wKingSquare & 7;
-        // const bKingFile = bKingSquare & 7;
-
-        // bishop
-        // while (wBishops) {
-        //     let square = this.GetLS1B(wBishops);
-        //     wBishops = this.RemoveBit(wBishops, square);
-
-        //     const attacks = this.GenerateBishopAttacks(occupied, square);
-        //     const centerAttacks = this.CountBits(attacks & this.LargeCenter);
-
-        //     // center attacks bonus
-        //     mg[Color.White] += this.MGCenterAttacks[centerAttacks];
-
-        //     // mg[Color.White] -= this.EdgeDistance[square] * 5;
-        //     // eg[Color.White] += this.EdgeDistance[square] * 5;
-
-        //     // bonus for staying out of the center in the opening
-        //     // mg[Color.White] += this.CenterManhattanDistance[square] * 4;
-
-        //     // eg[Color.White] += this.CenterManhattanDistance[square] * -2;
-        // }
-
-        // while (bBishops) {
-        //     let square = this.GetLS1B(bBishops);
-        //     bBishops = this.RemoveBit(bBishops, square);
-
-        //     const attacks = this.GenerateBishopAttacks(occupied, square);
-        //     const centerAttacks = this.CountBits(attacks & this.LargeCenter);
-
-        //     // center attacks bonus
-        //     mg[Color.Black] += this.MGCenterAttacks[centerAttacks];
-
-        //     // mg[Color.Black] -= this.EdgeDistance[square] * 5;
-        //     // eg[Color.Black] += this.EdgeDistance[square] * 5;
-
-        //     // bonus for staying out of the center in the opening
-        //     // mg[Color.Black] += this.CenterManhattanDistance[square] * 4;
-
-        //     // eg[Color.Black] += this.CenterManhattanDistance[square] * -2;
-        // }
 
         // rook
         while (wRooks) {
             let square = this.GetLS1B(wRooks);
             wRooks = this.RemoveBit(wRooks, square);
-
-            // mg[Color.White] -= this.EdgeDistance[square] * 5;
-            // const attacks = this.GenerateBishopAttacks(occupied, square);
-            // const numAttacks = this.CountBits(attacks);
-
-            // mg[Color.White] -= this.EdgeDistance[square] * 5;
-
-            // if (numAttacks <= 3 && square >> 3 === 7) {
-            //     if ((wKingFile < 4) === ((square & 7) < wKingFile)) {
-            //         mg[Color.White] -= 10;
-            //         eg[Color.White] -= 40;
-            //     }
-            // }
 
             // (semi-)open file bonus
             if ((this.fileMasks[square] & wPawns) === 0n) {
@@ -2004,19 +1907,6 @@ class Khepri {
             let square = this.GetLS1B(bRooks);
             bRooks = this.RemoveBit(bRooks, square);
 
-            // mg[Color.Black] -= this.EdgeDistance[square] * 5;
-            // const attacks = this.GenerateBishopAttacks(occupied, square);
-            // const numAttacks = this.CountBits(attacks);
-
-            // mg[Color.Black] -= this.EdgeDistance[square] * 5;
-
-            // if (numAttacks <= 3 && square >> 3 === 0) {
-            //     if ((bKingFile < 4) === ((square & 7) < bKingFile)) {
-            //         mg[Color.Black] -= 10;
-            //         eg[Color.Black] -= 40;
-            //     }
-            // }
-
             // (semi-)open file bonus
             if ((this.fileMasks[square] & bPawns) === 0n) {
                 if ((this.fileMasks[square] & wPawns) === 0n) {
@@ -2027,12 +1917,6 @@ class Khepri {
                 }
             }
         }
-
-        // king safety
-        // mg[Color.White] += (this.CenterManhattanDistance[wKingSquare] * 5) - (this.CornerSquares[wKingSquare] * 5);
-        // mg[Color.Black] += (this.CenterManhattanDistance[bKingSquare] * 5) - (this.CornerSquares[bKingSquare] * 5);
-        // eg[Color.White] += (this.CenterManhattanDistance[wKingSquare] * -5) - (this.CornerSquares[wKingSquare] * 15);
-        // eg[Color.Black] += (this.CenterManhattanDistance[bKingSquare] * -5) - (this.CornerSquares[bKingSquare] * 15);
 
         const opening = mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1] + pawnScore.opening;
         const endgame = eg[this.BoardState.SideToMove] - eg[this.BoardState.SideToMove ^ 1] + pawnScore.endgame;
