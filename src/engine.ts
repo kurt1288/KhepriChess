@@ -1569,7 +1569,7 @@ class Khepri {
      ****************************/
 
     // Default to a 32 MB hash table. Calculate how many 16-byte entries can fit
-    TranspositionTables: TTEntry[] = Array((32 * 1024 * 1024) / 16).fill(null);
+    TranspositionTables: (TTEntry | null)[] = Array((32 * 1024 * 1024) / 16).fill(null);
     TTSize = BigInt((32 * 1024 * 1024) / 16); // as bigint for faster/easier operations against hashes
     TTUsed = 0;
 
@@ -1578,7 +1578,7 @@ class Khepri {
     }
 
     /**
-     * Store an entry in the transposition table. Collisions are simply always replaced
+     * Store an entry in the transposition table. Collisions are always replaced
      */
     StoreEntry(hash: bigint, depth: number, move: number, score: number, flag: HashFlag) {
         const index = Number(hash % this.TTSize);
@@ -1596,11 +1596,17 @@ class Khepri {
         };
     }
 
-    GetEntry(hash: bigint): TTEntry | false {
+    /**
+     * Get a hash entry from the transposition table
+     * @param hash The hash to use to get the stored entry
+     * @returns Will return null if an entry hasn't been set at that index or if the entry's hash doesn't match the provided hash.
+     * Otherwise, the entry will be returned.
+     */
+    GetEntry(hash: bigint): TTEntry | null {
         const entry = this.TranspositionTables[Number(hash % this.TTSize)];
 
         if (entry && entry.Hash !== hash) {
-            return false;
+            return null;
         }
 
         return entry;
@@ -2233,11 +2239,12 @@ class Khepri {
             return 0;
         }
 
+        const isPVNode = beta - alpha > 1;
         let hashFlag = HashFlag.Alpha;
         let ttMove = 0;
         const entry = this.GetEntry(this.BoardState.Hash);
 
-        if (entry && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
+        if (!isPVNode && entry && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
             return entry.Score;
         }
 
