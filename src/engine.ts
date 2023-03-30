@@ -1958,7 +1958,8 @@ class Khepri {
      *          Search
      *
      ****************************/
-    private readonly INFINITY = 50000;
+    private readonly INFINITY = 100000;
+    private readonly MATE = 50000;
     private readonly MAXPLY = 100;
     private readonly ABORTEDSCORE = 500000;
     private nodesSearched = 0;
@@ -2111,7 +2112,7 @@ class Khepri {
             this.UnmakeNullMove();
 
             if (score >= beta) {
-                if (Math.abs(score) > (this.INFINITY - this.BoardState.Ply)) {
+                if (Math.abs(score) > (this.MATE - this.BoardState.Ply)) {
                     return beta;
                 }
                 return score;
@@ -2212,7 +2213,7 @@ class Khepri {
         // If there are no legal moves, it's either checkmate or stalemate
         if (legalMoves === 0) {
             if (inCheck) {
-                return -this.INFINITY + this.BoardState.Ply;
+                return -this.MATE + this.BoardState.Ply;
             }
             else {
                 return 0;
