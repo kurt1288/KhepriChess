@@ -1958,8 +1958,8 @@ class Khepri {
      *          Search
      *
      ****************************/
-    private readonly INFINITY = 100000;
-    private readonly MATE = 50000;
+    private readonly INFINITY = 60000;
+    private readonly MATE = 30000;
     private readonly MAXPLY = 100;
     private readonly ABORTEDSCORE = 500000;
     private nodesSearched = 0;
@@ -1977,6 +1977,18 @@ class Khepri {
         }
     
         return pv;
+    }
+
+    FormatScore(score: number) {
+        if (score < -this.MATE) {
+            return `mate ${(-this.INFINITY - score) / 2}`;
+        }
+
+        if (score > this.MATE) {
+            return `mate ${((this.INFINITY - score + 1) / 2)}`;
+        }
+
+        return `cp ${score}`;
     }
 
     UpdatePv(move: number) {
@@ -2047,7 +2059,7 @@ class Khepri {
 
             const endTime = Date.now();
 
-            console.log(`info depth ${depth} score cp ${score} nodes ${this.nodesSearched} nps ${(this.nodesSearched * 1000) / (endTime - startTime) | 0} hashfull ${1000 * this.TTUsed / Number(this.TTSize) | 0} time ${endTime - startTime} pv ${this.GetPv()}`);
+            console.log(`info depth ${depth} score ${this.FormatScore(score)} nodes ${this.nodesSearched} nps ${(this.nodesSearched * 1000) / (endTime - startTime) | 0} hashfull ${1000 * this.TTUsed / Number(this.TTSize) | 0} time ${endTime - startTime} pv ${this.GetPv()}`);
         }
 
         console.log(`bestmove ${this.StringifyMove(this.pvArray[0][0])}`);
@@ -2112,7 +2124,7 @@ class Khepri {
             this.UnmakeNullMove();
 
             if (score >= beta) {
-                if (Math.abs(score) > (this.MATE - this.BoardState.Ply)) {
+                if (Math.abs(score) > (this.INFINITY - this.BoardState.Ply)) {
                     return beta;
                 }
                 return score;
@@ -2213,7 +2225,7 @@ class Khepri {
         // If there are no legal moves, it's either checkmate or stalemate
         if (legalMoves === 0) {
             if (inCheck) {
-                return -this.MATE + this.BoardState.Ply;
+                return -this.INFINITY + this.BoardState.Ply;
             }
             else {
                 return 0;
