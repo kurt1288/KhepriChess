@@ -338,9 +338,9 @@ class Khepri {
     Random64() {
         let s = this.PRNG_SEED;
 
-        s ^= BigInt.asUintN(64, s >> 12n);
+        s ^= s >> 12n;
         s ^= BigInt.asUintN(64, s << 25n);
-        s ^= BigInt.asUintN(64, s >> 27n);
+        s ^= s >> 27n;
 
         this.PRNG_SEED = s;
 
@@ -468,7 +468,7 @@ class Khepri {
                 return board >> 8n;
             }
             case Direction.SOUTH: {
-                return board << 8n;
+                return BigInt.asUintN(64, board << 8n);
             }
             case Direction.EAST: {
                 return (board & this.notHFile) >> 1n;
