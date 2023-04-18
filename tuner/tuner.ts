@@ -1,12 +1,18 @@
-/**
- * This is a Javascript implementation, and adapted for KhepriChess,
- * of the tuner written for Blunder:
- * https://github.com/algerbrex/blunder/tree/main/tuner
- */
+import fs from "fs";
+import path from "path";
+import readline from "readline";
+import CLIProgress from "cli-progress";
+import Khepri, { CastlingRights, Color, MoveType, Piece, PieceType } from '.././src/engine';
 
-import { readFileSync, createWriteStream } from 'fs';
-import path from 'path';
-import Engine, { Color, Pieces, Square } from '../src/engine';
+interface Indexes {
+    MG_Material_StartIndex: number
+    EG_Material_StartIndex: number
+    EG_PSQT_StartIndex: number
+    MG_KnightOutpost_StartIndex: number
+    EG_KnightOutpost_StartIndex: number
+    MG_RookOpenFileBonus_StartIndex: number;
+    MG_RookSemiOpenFileBonus_StartIndex: number;
+}
 
 enum Outcome {
     BlackWin = 0.0,
@@ -25,540 +31,811 @@ interface Position {
     MGPhase: number
 }
 
-interface Indexes {
-    MG_Material_StartIndex: number
-    EG_Material_StartIndex: number
-    EG_PSQT_StartIndex: number
-    MG_DoubledPawn_Index: number
-    EG_DoubledPawn_Index: number
-    MG_IsolatedPawn_Index: number
-    EG_IsolatedPawn_Index: number
-    MG_FileSemiOpen_Index: number
-    MG_FileOpen_Index: number
-    MG_PassedPawn_Index: number
-    EG_PassedPawn_Index: number
-    MG_RookQueen_Index: number
-    MG_KnightOutpost_Index: number
-    EG_KnightOutpost_Index: number
-    MG_BishopOutpost_Index: number
-    EG_BishopOutpost_Index: number
-    KingSemiOpen_Index: number
-    MG_BishopPair_Index: number
-    EG_BishopPair_Index: number
-    MG_KnightMobility_Index: number
-    MG_BishopMobility_Index: number
-    MG_RookMobility_Index: number
-    MG_QueenMobility_Index: number
-    EG_KnightMobility_Index: number
-    EG_BishopMobility_Index: number
-    EG_RookMobility_Index: number
-    EG_QueenMobility_Index: number
-}
+export default class Tuner {
+    readonly Engine = new Khepri();
+    private readonly LearningRate = 0.5;
+    private readonly ScalingFactor = 0.01;
+    private readonly Epsilon = 0.00000001;
 
-export const engine = new Engine();
+    /**
+     * 
+     * @param epochs Number of epochs to run
+     * @param numPositions Number of positions to test per epoch. "0" to test all positions loaded
+     */
+    Tune(epochs: number, numPositions: number) {
+        const { weights, indexes } = this.LoadWeights();
+        
+        const positions = this.LoadPositions(indexes, numPositions, weights.length);
 
-const _scalingFactor = 0.01;
-const _epsilon = 0.00000001;
-const _learningRate = 0.5;
-
-export function LoadWeights() {
-    const weights: number[] = [];
-    const indexes: Indexes = {
-        // MG_PSQT_StartIndex begins at 0
-        EG_PSQT_StartIndex: 64 * 6,
-        MG_Material_StartIndex: 0,
-        EG_Material_StartIndex: 0,
-        MG_DoubledPawn_Index: 0,
-        EG_DoubledPawn_Index: 0,
-        MG_IsolatedPawn_Index: 0,
-        EG_IsolatedPawn_Index: 0,
-        MG_FileSemiOpen_Index: 0,
-        MG_FileOpen_Index: 0,
-        MG_PassedPawn_Index: 0,
-        EG_PassedPawn_Index: 0,
-        MG_RookQueen_Index: 0,
-        MG_KnightOutpost_Index: 0,
-        EG_KnightOutpost_Index: 0,
-        MG_BishopOutpost_Index: 0,
-        EG_BishopOutpost_Index: 0,
-        KingSemiOpen_Index: 0,
-        MG_BishopPair_Index: 0,
-        EG_BishopPair_Index: 0,
-        MG_KnightMobility_Index: 0,
-        MG_BishopMobility_Index: 0,
-        MG_RookMobility_Index: 0,
-        MG_QueenMobility_Index: 0,
-        EG_KnightMobility_Index: 0,
-        EG_BishopMobility_Index: 0,
-        EG_RookMobility_Index: 0,
-        EG_QueenMobility_Index: 0,
-    };
-
-    let index = 0;
-
-    for (let i = 0; i <= 5; i++) {
-        weights.splice(index, 0, ...engine.PST[0][i]);
-        weights.splice(384 + index, 0, ...engine.PST[1][i]);
-        index += 64;
-    }
-
-    index *= 2;
-
-    indexes.MG_Material_StartIndex = index;
-	indexes.EG_Material_StartIndex = index + 5;
-
-    weights.splice(indexes.MG_Material_StartIndex, 0, ...engine.MGPieceValue.slice(0, -1));
-    weights.splice(indexes.EG_Material_StartIndex, 0, ...engine.EGPieceValue.slice(0, -1));
-
-    index += 10;
-
-    indexes.MG_DoubledPawn_Index = index;
-    indexes.EG_DoubledPawn_Index = index + 1;
-
-    weights.splice(indexes.MG_DoubledPawn_Index, 0, engine.MGdoubledPenalty);
-    weights.splice(indexes.EG_DoubledPawn_Index, 0, engine.EGdoubledPenalty);
-
-    index += 2;
-
-    indexes.MG_IsolatedPawn_Index = index;
-    indexes.EG_IsolatedPawn_Index = index + 1;
-
-    weights.splice(indexes.MG_IsolatedPawn_Index, 0, engine.MGisolatedPenalty);
-    weights.splice(indexes.EG_IsolatedPawn_Index, 0, engine.EGisolatedPenalty);
-
-    index += 2;
-
-    indexes.MG_FileSemiOpen_Index = index;
-    indexes.MG_FileOpen_Index = index + 1;
-
-    weights.splice(indexes.MG_FileSemiOpen_Index, 0, engine.MGfileSemiOpenScore);
-    weights.splice(indexes.MG_FileOpen_Index, 0, engine.MGfileOpenScore);
-
-    index += 2;
-
-    indexes.MG_PassedPawn_Index = index;
-    indexes.EG_PassedPawn_Index = index + 8;
-
-    weights.splice(indexes.MG_PassedPawn_Index, 0, ...engine.MGpassedBonus);
-    weights.splice(indexes.EG_PassedPawn_Index, 0, ...engine.EGpassedBonus);
-
-    index += 16;
-
-    indexes.MG_RookQueen_Index = index;
-    weights.splice(indexes.MG_RookQueen_Index, 0, engine.MGrookQueenFileBonus);
-
-    index += 1;
-
-    indexes.MG_KnightOutpost_Index = index;
-    indexes.EG_KnightOutpost_Index = index + 1;
-
-    weights.splice(indexes.MG_KnightOutpost_Index, 0, engine.MGKnightOutpostBonus);
-    weights.splice(indexes.EG_KnightOutpost_Index, 0, engine.EGKnightOutpostBonus);
-
-    index += 2;
-
-    indexes.MG_BishopOutpost_Index = index;
-    indexes.EG_BishopOutpost_Index = index + 1;
-
-    weights.splice(indexes.MG_BishopOutpost_Index, 0, engine.MGBishopOutpostBonus);
-    weights.splice(indexes.EG_BishopOutpost_Index, 0, engine.EGBishopOutpostBonus);
-
-    index += 2;
-
-    indexes.KingSemiOpen_Index = index;
-
-    weights.splice(indexes.KingSemiOpen_Index, 0, engine.MGKingSemiOpenPenalty);
-
-    index += 1;
-
-    indexes.MG_BishopPair_Index = index;
-    indexes.EG_BishopPair_Index = index + 1;
-
-    weights.splice(indexes.MG_BishopPair_Index, 0, engine.MGBishopPairBonus);
-    weights.splice(indexes.EG_BishopPair_Index, 0, engine.EGBishopPairBonus);
-
-    index += 2;
-
-    indexes.MG_KnightMobility_Index = index;
-    indexes.MG_BishopMobility_Index = index + 9;
-    indexes.MG_RookMobility_Index = indexes.MG_BishopMobility_Index + 14;
-    indexes.MG_QueenMobility_Index = indexes.MG_RookMobility_Index + 15;
-    indexes.EG_KnightMobility_Index = indexes.MG_QueenMobility_Index + 28;
-    indexes.EG_BishopMobility_Index = indexes.EG_KnightMobility_Index + 9;
-    indexes.EG_RookMobility_Index = indexes.EG_BishopMobility_Index + 14;
-    indexes.EG_QueenMobility_Index = indexes.EG_RookMobility_Index + 15;
-
-    weights.splice(indexes.MG_KnightMobility_Index, 0, ...engine.MGKnightMobility);
-    weights.splice(indexes.MG_BishopMobility_Index, 0, ...engine.MGBishopMobility);
-    weights.splice(indexes.MG_RookMobility_Index, 0, ...engine.MGRookMobility);
-    weights.splice(indexes.MG_QueenMobility_Index, 0, ...engine.MGQueenMobility);
-    weights.splice(indexes.EG_KnightMobility_Index, 0, ...engine.EGKnightMobility);
-    weights.splice(indexes.EG_BishopMobility_Index, 0, ...engine.EGBishopMobility);
-    weights.splice(indexes.EG_RookMobility_Index, 0, ...engine.EGRookMobility);
-    weights.splice(indexes.EG_QueenMobility_Index, 0, ...engine.EGQueenMobility);
-
-    return { weights, indexes };
-}
-
-function LoadPositions(indexes: Indexes, numPositions: number, weightsLength: number): Position[] {
-    const positions: Position[] = [];
-    const reg = new RegExp("\"(.*?)\"");
-
-    try {
-        const data = readFileSync(path.join(__dirname, "./quiet-extended-2.epd"), "utf8");
-        const lines = data.split("\n");
-
+        console.log("Tuning...");
+        const progress = new CLIProgress.SingleBar({
+            format: '{bar} | {percentage}% | {value}/{total} epochs | Elapsed time: {duration_formatted} | ETA: {eta_formatted}',
+            barCompleteChar: '\u2588',
+            barIncompleteChar: '\u2591',
+            hideCursor: true,
+            etaBuffer: 1000,
+        });
+        progress.start(epochs, 0);
+    
+        const gradientsSumsSquared = new Array(weights.length).fill(0);
+        const beforeErr = this.ComputeMSE(positions, weights);
+    
         if (numPositions === 0) {
-            numPositions = lines.length;
+            numPositions = positions.length;
         }
         
-        for (let i = 0; i < numPositions; i++) {
-            const line = lines[i];
-            const fen = line.split("\"")[0];
-            const value = (line.match(reg) as RegExpMatchArray)[1];
-            let result = Outcome.Draw;
-
-            if (value === "0-1") {
-                result = Outcome.BlackWin;
-            }
-            else if (value === "1-0") {
-                result = Outcome.WhiteWin;
-            }
-
-            engine.LoadFEN(fen);
-
-            const coefficients = GetCoefficients(indexes, weightsLength);
-
-            const phase = ((engine.Position.Phase * 256 + (engine.PhaseTotal / 2)) / engine.PhaseTotal) | 0;
-		    const mgPhase = (256-phase) / 256;
-
-            positions.push({ normals: coefficients, outcome: result, MGPhase: mgPhase });
-        }
-
-        console.log("Finished loading positions");
-    }
-    catch (error) {
-        console.log(error);
-    }
-
-    return positions;
-}
-
-export function GetCoefficients(indexes: Indexes, weightsLength: number) {
-    const rawNormals = new Array(weightsLength).fill(0);
-    const normals: Coefficient[] = [];
-    const phase = ((engine.Position.Phase * 256 + (engine.PhaseTotal / 2)) / engine.PhaseTotal) | 0;
-    const mgPhase = (256 - phase) / 256;
-	const egPhase = phase / 256;
-    const bishopCount = [0, 0];
-    const kingSquares = [
-        engine.GetLS1B(engine.Position.PiecesBB[Color.White][Pieces.King]),
-        engine.GetLS1B(engine.Position.PiecesBB[Color.White][Pieces.King]),
-    ];
-    const kingZones = [
-        engine.KingAttacks[kingSquares[Color.White]] | engine.squareBB[kingSquares[Color.White]],
-        engine.KingAttacks[kingSquares[Color.Black]] | engine.squareBB[kingSquares[Color.Black]],
-    ];
-    const kingAttackers = [0, 0];
-
-    let allOccupancies = engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1];
-    const outpostRanks = [engine.rankMasks[Square.a4] | engine.rankMasks[Square.a5] | engine.rankMasks[Square.a6], engine.rankMasks[Square.a3] | engine.rankMasks[Square.a4] | engine.rankMasks[Square.a5]];
-
-    while (allOccupancies) {
-        let square = engine.GetLS1B(allOccupancies);
-        let actualSquare = square;
-        allOccupancies = engine.RemoveBit(allOccupancies, square);
-        const piece = engine.Position.Squares[square];
-        let sign = 1;
-
-        // Because the PST are from white's perspective, we have to flip the square if the piece is black's
-        if (piece.Color === 1) {
-            square ^= 56;
-            sign = -1;
-        }
-
-        // PST coefficients
-        const mgIndex = (piece.Type * 64) + square;
-        const egIndex = indexes.EG_PSQT_StartIndex + mgIndex;
-        rawNormals[mgIndex] += sign * mgPhase;
-        rawNormals[egIndex] += sign * egPhase;
-
-        switch (piece.Type) {
-            case Pieces.Pawn: {
-                // Doubled pawns
-                const pawnsOnFile = engine.Position.PiecesBB[piece.Color][Pieces.Pawn] & engine.fileMasks[square];
-                if ((pawnsOnFile & (pawnsOnFile - 1n)) !== 0n) {
-                    rawNormals[indexes.MG_DoubledPawn_Index] -= sign * mgPhase;
-                    rawNormals[indexes.EG_DoubledPawn_Index] -= sign * egPhase;
-                }
-
-                // Isolated pawns
-                if ((engine.Position.PiecesBB[piece.Color][Pieces.Pawn] & engine.isolatedMasks[square]) === 0n) {
-                    rawNormals[indexes.MG_IsolatedPawn_Index] -= sign * mgPhase;
-                    rawNormals[indexes.EG_IsolatedPawn_Index] -= sign * egPhase;
-                }
-
-                // Passed pawns
-                if ((engine.passedMasks[piece.Color][square] & engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n) {
-                    // https://www.chessprogramming.org/Ranks
-                    const rank = 7 - (square >> 3);
-                    rawNormals[indexes.MG_PassedPawn_Index + rank] += sign * mgPhase;
-                    rawNormals[indexes.EG_PassedPawn_Index + rank] += sign * egPhase;
-                }
-                break;
-            }
-            case Pieces.Knight: {
-                // Knight outposts
-                if ((outpostRanks[piece.Color] & engine.squareBB[actualSquare])
-                    && (engine.passedMasks[piece.Color][actualSquare] & ~engine.fileMasks[actualSquare] & engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n
-                    && engine.PawnAttacks[piece.Color ^ 1][actualSquare] & engine.Position.PiecesBB[piece.Color][Pieces.Pawn]) {
-                        rawNormals[indexes.MG_KnightOutpost_Index] += sign * mgPhase
-                        rawNormals[indexes.EG_KnightOutpost_Index] += sign * egPhase
-                }
-
-                const attacks = engine.KnightAttacks[actualSquare];
-                const mobility = engine.CountBits(attacks);
-
-                rawNormals[indexes.MG_KnightMobility_Index + mobility] += sign * mgPhase;
-                rawNormals[indexes.EG_KnightMobility_Index + mobility] += sign * egPhase;
-
-                break;
-            }
-            case Pieces.Bishop: {
-                bishopCount[piece.Color]++;
-
-                const attacks = engine.GenerateBishopAttacks(engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1], actualSquare);
-                const mobility = engine.CountBits(attacks);
-
-                rawNormals[indexes.MG_BishopMobility_Index + mobility] += sign * mgPhase;
-                rawNormals[indexes.EG_BishopMobility_Index + mobility] += sign * egPhase;
-
-                if ((outpostRanks[piece.Color] & engine.squareBB[actualSquare])
-                    && (engine.passedMasks[piece.Color][actualSquare] & ~engine.fileMasks[actualSquare] & engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn]) === 0n
-                    && engine.PawnAttacks[piece.Color ^ 1][actualSquare] & engine.Position.PiecesBB[piece.Color][Pieces.Pawn]) {
-                        rawNormals[indexes.MG_BishopOutpost_Index] += sign * mgPhase
-                        rawNormals[indexes.EG_BishopOutpost_Index] += sign * egPhase
-                }
-
-                break;
-            }
-            case Pieces.Rook: {
-                const attacks = engine.GenerateRookAttacks(engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1], actualSquare);
-                const mobility = engine.CountBits(attacks);
-
-                rawNormals[indexes.MG_RookMobility_Index + mobility] += sign * mgPhase;
-                rawNormals[indexes.EG_RookMobility_Index + mobility] += sign * egPhase;
-
-                if ((engine.Position.PiecesBB[piece.Color][Pieces.Pawn] & engine.fileMasks[square]) === 0n) {
-                    if ((engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Pawn] & engine.fileMasks[square]) === 0n) {
-                        rawNormals[indexes.MG_FileOpen_Index] += sign * mgPhase;
-                    }
-                    else {
-                        rawNormals[indexes.MG_FileSemiOpen_Index] += sign * mgPhase;
-                    }
-                }
-
-                // Bonus if rook is on the same file as opponent's queen
-                if (engine.fileMasks[square] & engine.Position.PiecesBB[piece.Color ^ 1][Pieces.Queen]) {
-                    rawNormals[indexes.MG_RookQueen_Index] += sign * mgPhase;
-                }
-                break;
-            }
-            case Pieces.Queen: {
-                const attacks = engine.GenerateBishopAttacks(engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1], actualSquare) | engine.GenerateRookAttacks(engine.Position.OccupanciesBB[0] | engine.Position.OccupanciesBB[1], actualSquare);
-                const mobility = engine.CountBits(attacks);
-
-                rawNormals[indexes.MG_QueenMobility_Index + mobility] += sign * mgPhase;
-                rawNormals[indexes.EG_QueenMobility_Index + mobility] += sign * egPhase;
-
-                break;
-            }
-            case Pieces.King: {
-                const file = Math.min(Math.max(square & 7, 1), 6);
-                let j = 1;
-
-                for (let i = file - 1; i <= file + 1; i++) {
-                    if ((engine.fileMasks[i] & engine.Position.PiecesBB[piece.Color][Pieces.Pawn]) === 0n) {
-                        rawNormals[indexes.KingSemiOpen_Index] -= mgPhase * sign * j * j;
-                        j++;
-                    }
-                }
-
-                break;
-            }
-        }
-    }
-
-    if (bishopCount[Color.White] >= 2) {
-        rawNormals[indexes.MG_BishopPair_Index] += mgPhase;
-        rawNormals[indexes.EG_BishopPair_Index] += egPhase;
-    }
-    if (bishopCount[Color.Black] >= 2) {
-        rawNormals[indexes.MG_BishopPair_Index] -= mgPhase;
-        rawNormals[indexes.EG_BishopPair_Index] -= egPhase;
-    }
-
-    // Material coeffs
-    for (let piece = 0; piece <= 4; piece++) {
-        const whiteCount = engine.CountBits(engine.Position.PiecesBB[0][piece]);
-        const blackCount = engine.CountBits(engine.Position.PiecesBB[1][piece]);
-        rawNormals[indexes.MG_Material_StartIndex + piece] = (whiteCount - blackCount) * mgPhase;
-        rawNormals[indexes.EG_Material_StartIndex + piece] = (whiteCount - blackCount) * egPhase;
-    }
-
-    for (let [index, normal] of rawNormals.entries()) {
-        if (normal !== 0) {
-            normals.push({ index, value: normal });
-        }
-    }
-
-    return normals;
-}
-
-export function Evaluate(weights: number[], normals: Coefficient[]) {
-    let score = 0;
-
-    for (let i of normals) {
-        score += weights[i.index] * i.value;
-    }
-
-    return score;
-}
-
-function ComputeMSE(positions: Position[], weights: number[]) {
-    let errorSum = 0;
-
-    for (let position of positions) {
-        let score = Evaluate(weights, position.normals);
-        let sigmoid = 1 / (1 + Math.exp(-(_scalingFactor * score)));
-        let error = position.outcome - sigmoid;
-        errorSum += Math.pow(error, 2);
-    }
-
-    return errorSum / positions.length;
-}
-
-function ComputeGradient(positions: Position[], weights: number[], indexes: Indexes) {
-    const gradients: number[] = new Array(weights.length).fill(0);
-
-    for (let position of positions) {
-        let score = Evaluate(weights, position.normals);
-        let sigmoid = 1 / (1 + Math.exp(-(_scalingFactor * score)));
-        let error = position.outcome - sigmoid;
-
-        let term = error * (1 - sigmoid) * sigmoid;
-
-        for (let normal of position.normals) {
-            gradients[normal.index] += term * normal.value;
-        }
-    }
-
-    return gradients;
-}
-
-function PrintResults(weights: number[], indexes: Indexes) {
-    console.log(`MG Piece Values: ${weights.slice(indexes.MG_Material_StartIndex, indexes.MG_Material_StartIndex + 5).map(x => Math.round(x))}`);
-    console.log(`EG Piece Values: ${weights.slice(indexes.EG_Material_StartIndex, indexes.EG_Material_StartIndex + 5).map(x => Math.round(x))}`);
-
-    const pieceNames = [ "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" ];
-
-    for (let piece = 0, index = 0; piece <= 5; piece++, index += 64) {
-        console.log(`MG ${pieceNames[piece]} PST = `);
-        console.log(`[`);
-        const slice = weights.slice(index, index + 64);
-        const pst: number[] = [];
-        for (let i = 0; i < slice.length; i++) {
-            pst[i] = Math.round(slice[i]);
-        }
-        for (let i = 0; i < 64; i += 8) {
-            console.log(pst.slice(i, i + 8).join(", ").concat(", "));
-        }
-        console.log(`]`);
-    }
-
-    for (let piece = 0, index = 0; piece <= 5; piece++, index += 64) {
-        console.log(`EG ${pieceNames[piece]} PST = `);
-        console.log(`[`);
-        const slice = weights.slice(indexes.EG_PSQT_StartIndex + index, indexes.EG_PSQT_StartIndex + index + 64);
-        const pst: number[] = [];
-        for (let i = 0; i < slice.length; i++) {
-            pst[i] = Math.round(slice[i]);
-        }
-        for (let i = 0; i < 64; i += 8) {
-            console.log(pst.slice(i, i + 8).join(", ").concat(", "));
-        }
-        console.log(`]`);
-    }
-
-    console.log(`MG Doubled Penalty: ${weights.slice(indexes.MG_DoubledPawn_Index, indexes.MG_DoubledPawn_Index + 1).map(x => Math.round(x))}`);
-    console.log(`EG Doubled Penalty: ${weights.slice(indexes.EG_DoubledPawn_Index, indexes.EG_DoubledPawn_Index + 1).map(x => Math.round(x))}`);
-    console.log(`MG Isolated Penalty: ${weights.slice(indexes.MG_IsolatedPawn_Index, indexes.MG_IsolatedPawn_Index + 1).map(x => Math.round(x))}`);
-    console.log(`EG Isolated Penalty: ${weights.slice(indexes.EG_IsolatedPawn_Index, indexes.EG_IsolatedPawn_Index + 1).map(x => Math.round(x))}`);
-    console.log(`MG File Semi-Open Score: ${weights.slice(indexes.MG_FileSemiOpen_Index, indexes.MG_FileSemiOpen_Index + 1).map(x => Math.round(x))}`);
-    console.log(`EG File Open Score: ${weights.slice(indexes.MG_FileOpen_Index, indexes.MG_FileOpen_Index + 1).map(x => Math.round(x))}`);
-    console.log(`MG Passed Pawn Bonus: ${weights.slice(indexes.MG_PassedPawn_Index, indexes.MG_PassedPawn_Index + 8).map(x => Math.round(x)).join(", ")}`);
-    console.log(`EG Passed Pawn Bonus: ${weights.slice(indexes.EG_PassedPawn_Index, indexes.EG_PassedPawn_Index + 8).map(x => Math.round(x)).join(", ")}`);
-    console.log(`MG Rook-Queen File Score: ${weights.slice(indexes.MG_RookQueen_Index, indexes.MG_RookQueen_Index + 1).map(x => Math.round(x))}`);
-    console.log(`MG Knight Outpost Score: ${weights.slice(indexes.MG_KnightOutpost_Index, indexes.MG_KnightOutpost_Index + 1).map(x => Math.round(x))}`);
-    console.log(`EG Knight Outpost Score: ${weights.slice(indexes.EG_KnightOutpost_Index, indexes.EG_KnightOutpost_Index + 1).map(x => Math.round(x))}`);
-    console.log(`MG Bishop Outpost Score: ${weights.slice(indexes.MG_BishopOutpost_Index, indexes.MG_BishopOutpost_Index + 1).map(x => Math.round(x))}`);
-    console.log(`EG Bishop Outpost Score: ${weights.slice(indexes.EG_BishopOutpost_Index, indexes.EG_BishopOutpost_Index + 1).map(x => Math.round(x))}`);
-    console.log(`King Semi Open: ${weights.slice(indexes.KingSemiOpen_Index, indexes.KingSemiOpen_Index + 1).map(x => Math.round(x))}`);
-    console.log(`MG Bishop Pair Score: ${weights.slice(indexes.MG_BishopPair_Index, indexes.MG_BishopPair_Index + 1).map(x => Math.round(x))}`);
-    console.log(`EG Bishop Pair Score: ${weights.slice(indexes.EG_BishopPair_Index, indexes.EG_BishopPair_Index + 1).map(x => Math.round(x))}`);
-
-    console.log(`MG Knight Mobility: ${weights.slice(indexes.MG_KnightMobility_Index, indexes.MG_KnightMobility_Index + 9).map(x => Math.round(x))}`);
-    console.log(`MG Bishop Mobility: ${weights.slice(indexes.MG_BishopMobility_Index, indexes.MG_BishopMobility_Index + 14).map(x => Math.round(x))}`);
-    console.log(`MG Rook Mobility: ${weights.slice(indexes.MG_RookMobility_Index, indexes.MG_RookMobility_Index + 15).map(x => Math.round(x))}`);
-    console.log(`MG Queen Mobility: ${weights.slice(indexes.MG_QueenMobility_Index, indexes.MG_QueenMobility_Index + 28).map(x => Math.round(x))}`);
-    console.log(`EG Knight Mobility: ${weights.slice(indexes.EG_KnightMobility_Index, indexes.EG_KnightMobility_Index + 9).map(x => Math.round(x))}`);
-    console.log(`EG Bishop Mobility: ${weights.slice(indexes.EG_BishopMobility_Index, indexes.EG_BishopMobility_Index + 14).map(x => Math.round(x))}`);
-    console.log(`EG Rook Mobility: ${weights.slice(indexes.EG_RookMobility_Index, indexes.EG_RookMobility_Index + 15).map(x => Math.round(x))}`);
-    console.log(`EG Queen Mobility: ${weights.slice(indexes.EG_QueenMobility_Index, indexes.EG_QueenMobility_Index + 28).map(x => Math.round(x))}`);
-}
-
-function Tune(epochs: number, numPositions: number) {
-    console.time("tuner");
-    const { weights, indexes } = LoadWeights();
-    const positions = LoadPositions(indexes, numPositions, weights.length);
-
-    const gradientsSumsSquared = new Array(weights.length).fill(0);
-    const beforeErr = ComputeMSE(positions, weights);
-
-    if (numPositions === 0) {
-        numPositions = positions.length;
-    }
+        let N = numPositions;
+        let learningRate = this.LearningRate;
+        const errors: number[] = [];
     
-    let N = numPositions;
-    let learningRate = _learningRate;
-    const errors: number[] = [];
+        for (let epoch = 0; epoch < epochs; epoch++) {
+            let gradients = this.ComputeGradient(positions, weights, indexes);
+    
+            for (let [index, gradient] of gradients.entries()) {
+                const leadingCoefficent = (-2 * this.ScalingFactor) / N;
+                gradientsSumsSquared[index] += (leadingCoefficent * gradient) * (leadingCoefficent * gradient);
+                weights[index] += (leadingCoefficent * gradient) * (-learningRate / Math.sqrt(gradientsSumsSquared[index] + this.Epsilon));
+            }
+    
+            errors.push(this.ComputeMSE(positions, weights));
+            progress.update(epoch + 1);
+        }
+    
+        progress.stop();
+        const file = fs.createWriteStream("errors.txt");
+        file.on("error", (err) => {
+            throw new Error("Unable to write errors to file");
+        });
+        for (const [index, value] of errors.entries()) {
+            file.write(`${index}, ${value}\n`);
+        }
+        file.end();
+    
+        console.log(`Best error before tuning: ${beforeErr}`);
+        console.log(`Best error after tuning: ${this.ComputeMSE(positions, weights)}`);
+        this.PrintResults(weights, indexes);
+    }
 
-    for (let epoch = 0; epoch < epochs; epoch++) {
-        let gradients = ComputeGradient(positions, weights, indexes);
-
-        for (let [index, gradient] of gradients.entries()) {
-            const leadingCoefficent = (-2 * _scalingFactor) / N;
-			gradientsSumsSquared[index] += (leadingCoefficent * gradient) * (leadingCoefficent * gradient);
-			weights[index] += (leadingCoefficent * gradient) * (-learningRate / Math.sqrt(gradientsSumsSquared[index] + _epsilon));
+    PrintResults(weights: number[], indexes: Indexes) {
+        console.log(`MG Piece Values: ${weights.slice(indexes.MG_Material_StartIndex, indexes.MG_Material_StartIndex + 5).map(x => Math.round(x))}`);
+        console.log(`EG Piece Values: ${weights.slice(indexes.EG_Material_StartIndex, indexes.EG_Material_StartIndex + 5).map(x => Math.round(x))}`);
+    
+        const pieceNames = [ "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" ];
+    
+        for (let piece = 0, index = 0; piece <= 5; piece++, index += 64) {
+            console.log(`MG ${pieceNames[piece]} PST = `);
+            console.log(`[`);
+            const slice = weights.slice(index, index + 64);
+            const pst: number[] = [];
+            for (let i = 0; i < slice.length; i++) {
+                pst[i] = Math.round(slice[i]);
+            }
+            for (let i = 0; i < 64; i += 8) {
+                console.log(pst.slice(i, i + 8).join(", ").concat(", "));
+            }
+            console.log(`]`);
+        }
+    
+        for (let piece = 0, index = 0; piece <= 5; piece++, index += 64) {
+            console.log(`EG ${pieceNames[piece]} PST = `);
+            console.log(`[`);
+            const slice = weights.slice(indexes.EG_PSQT_StartIndex + index, indexes.EG_PSQT_StartIndex + index + 64);
+            const pst: number[] = [];
+            for (let i = 0; i < slice.length; i++) {
+                pst[i] = Math.round(slice[i]);
+            }
+            for (let i = 0; i < 64; i += 8) {
+                console.log(pst.slice(i, i + 8).join(", ").concat(", "));
+            }
+            console.log(`]`);
         }
 
-        errors.push(ComputeMSE(positions, weights));
-        console.log(`Epoch number ${epoch + 1} completed`);
+        console.log(`MG Knight Outpost Score: ${weights.slice(indexes.MG_KnightOutpost_StartIndex, indexes.MG_KnightOutpost_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`EG Knight Outpost Score: ${weights.slice(indexes.EG_KnightOutpost_StartIndex, indexes.EG_KnightOutpost_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`Rook File Semi-Open Score: ${weights.slice(indexes.MG_RookSemiOpenFileBonus_StartIndex, indexes.MG_RookSemiOpenFileBonus_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`Rook File Open Score: ${weights.slice(indexes.MG_RookOpenFileBonus_StartIndex, indexes.MG_RookOpenFileBonus_StartIndex + 1).map(x => Math.round(x))}`);
     }
 
-    const file = createWriteStream("errors.txt");
-    file.on("error", (err) => {
-        throw new Error("Unable to write errors to file");
-    });
-    for (const [index, value] of errors.entries()) {
-        file.write(`${index}, ${value}\n`);
+    Evaluate(weights: number[], normals: Coefficient[]) {
+        let score = 0;
+    
+        for (let i of normals) {
+            score += weights[i.index] * i.value;
+            if (isNaN(score)) {
+                throw new Error(`Invalid score returned: ${score}. i: ${i}`);
+            }
+        }
+    
+        return score;
     }
-    file.end();
 
-    console.log(`Best error before tuning: ${beforeErr}`);
-    console.log(`Best error after tuning: ${ComputeMSE(positions, weights)}`);
-    PrintResults(weights, indexes);
-    console.timeEnd("tuner");
+    ComputeMSE(positions: Position[], weights: number[]) {
+        let errorSum = 0;
+    
+        for (let position of positions) {
+            let score = this.Evaluate(weights, position.normals);
+            let sigmoid = 1 / (1 + Math.exp(-(this.ScalingFactor * score)));
+            let error = position.outcome - sigmoid;
+            errorSum += Math.pow(error, 2);
+        }
+    
+        return errorSum / positions.length;
+    }
+
+    ComputeGradient(positions: Position[], weights: number[], indexes: Indexes) {
+        const gradients: number[] = new Array(weights.length).fill(0);
+    
+        for (let position of positions) {
+            let score = this.Evaluate(weights, position.normals);
+            let sigmoid = 1 / (1 + Math.exp(-(this.ScalingFactor * score)));
+            let error = position.outcome - sigmoid;
+    
+            let term = error * (1 - sigmoid) * sigmoid;
+    
+            for (let normal of position.normals) {
+                gradients[normal.index] += term * normal.value;
+            }
+        }
+    
+        return gradients;
+    }
+
+    LoadWeights() {
+        const weights: number[] = [];
+        const indexes: Indexes = {
+            // MG_PSQT_StartIndex begins at 0
+            EG_PSQT_StartIndex: 64 * 6,
+            MG_Material_StartIndex: 0,
+            EG_Material_StartIndex: 0,
+            MG_KnightOutpost_StartIndex: 0,
+            EG_KnightOutpost_StartIndex: 0,
+            MG_RookOpenFileBonus_StartIndex: 0,
+            MG_RookSemiOpenFileBonus_StartIndex: 0,
+        };
+    
+        let index = 0;
+    
+        for (let i = 0; i <= 5; i++) {
+            weights.splice(index, 0, ...this.Engine.PST[0][i]);
+            weights.splice(384 + index, 0, ...this.Engine.PST[1][i]);
+            index += 64;
+        }
+    
+        index *= 2;
+    
+        indexes.MG_Material_StartIndex = index;
+        indexes.EG_Material_StartIndex = index + 5;
+    
+        weights.splice(indexes.MG_Material_StartIndex, 0, ...this.Engine.MGPieceValue.slice(0, -1));
+        weights.splice(indexes.EG_Material_StartIndex, 0, ...this.Engine.EGPieceValue.slice(0, -1));
+    
+        index += 10;
+
+        indexes.MG_KnightOutpost_StartIndex = index;
+        weights.splice(indexes.MG_KnightOutpost_StartIndex, 0, this.Engine.MGKnightOutpost);
+
+        indexes.EG_KnightOutpost_StartIndex = index + 1;
+        weights.splice(indexes.MG_KnightOutpost_StartIndex, 0, this.Engine.EGKnightOutpost);
+
+        indexes.MG_RookOpenFileBonus_StartIndex = index + 2;
+        weights.splice(indexes.MG_KnightOutpost_StartIndex, 0, this.Engine.MGRookOpenFileBonus);
+
+        indexes.MG_RookSemiOpenFileBonus_StartIndex = index + 3;
+        weights.splice(indexes.MG_KnightOutpost_StartIndex, 0, this.Engine.MGRookSemiOpenFileBonus);
+    
+        return { weights, indexes };
+    }
+
+    LoadPositions(indexes: Indexes, numPositions: number, weightsLength: number): Position[] {
+        const positions: Position[] = [];
+        const reg = new RegExp("\"(.*?)\"");
+
+        console.log("Loading positions...");
+
+        const progress = new CLIProgress.SingleBar({
+            format: '{bar} | {percentage}% | {value}/{total} positions | Elapsed time: {duration_formatted} | ETA: {eta_formatted}',
+            barCompleteChar: '\u2588',
+            barIncompleteChar: '\u2591',
+            hideCursor: true,
+            etaBuffer: 1000,
+        });
+    
+        try {
+            const data = fs.readFileSync(path.join(__dirname, "./positions.txt"), "utf8");
+            const lines = data.split("\n");
+    
+            if (numPositions === 0) {
+                numPositions = lines.length;
+            }
+
+            progress.start(numPositions, 0);
+            
+            for (let i = 0; i < numPositions; i++) {
+                const line = lines[i];
+                const fen = line.split("\"")[0];
+                const value = (line.match(reg) as RegExpMatchArray)[1];
+                let result = Outcome.Draw;
+    
+                if (value === "0-1") {
+                    result = Outcome.BlackWin;
+                }
+                else if (value === "1-0") {
+                    result = Outcome.WhiteWin;
+                }
+    
+                this.Engine.LoadFEN(fen);
+    
+                const coefficients = this.GetCoefficients(indexes, weightsLength);
+    
+                const phase = ((this.Engine.BoardState.Phase * 256 + (this.Engine.PhaseTotal / 2)) / this.Engine.PhaseTotal) | 0;
+                const mgPhase = (256-phase) / 256;
+    
+                progress.update(i + 1);
+                positions.push({ normals: coefficients, outcome: result, MGPhase: mgPhase });
+            }
+    
+            progress.stop();
+        }
+        catch (error) {
+            console.log(error);
+        }
+    
+        return positions;
+    }
+
+    GetCoefficients(indexes: Indexes, weightsLength: number) {
+        const rawNormals = new Array(weightsLength).fill(0);
+        const normals: Coefficient[] = [];
+        const phase = ((this.Engine.BoardState.Phase * 256 + (this.Engine.PhaseTotal / 2)) / this.Engine.PhaseTotal) | 0;
+        const mgPhase = (256 - phase) / 256;
+        const egPhase = phase / 256;
+
+        let allOccupancies = this.Engine.BoardState.OccupanciesBB[0] | this.Engine.BoardState.OccupanciesBB[1];
+
+        while (allOccupancies) {
+            let square = this.Engine.GetLS1B(allOccupancies);
+            let actualSquare = square;
+            allOccupancies = this.Engine.RemoveBit(allOccupancies, square);
+            const piece = this.Engine.BoardState.Squares[square] as Piece;
+            let sign = 1;
+    
+            // Because the PST are from white's perspective, we have to flip the square if the piece is black's
+            if (piece.Color === 1) {
+                square ^= 56;
+                sign = -1;
+            }
+    
+            // PST coefficients
+            const mgIndex = (piece.Type * 64) + square;
+            const egIndex = indexes.EG_PSQT_StartIndex + mgIndex;
+            rawNormals[mgIndex] += sign * mgPhase;
+            rawNormals[egIndex] += sign * egPhase;
+
+            switch (piece.Type) {
+                case PieceType.Knight: {
+                    // OUTPOSTS:
+                    // First condition checks if the square is defended by a pawn,
+                    // second condition checks if the square is attacked by an enemy pawn
+                    if ((this.Engine.PawnAttacks[actualSquare + (64 * (piece.Color ^ 1))] & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)])
+                        && !(this.Engine.PawnAttacks[actualSquare + (64 * (piece.Color))] & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * (piece.Color ^ 1))])) {
+                            rawNormals[indexes.MG_KnightOutpost_StartIndex] += sign * mgPhase;
+                            rawNormals[indexes.EG_KnightOutpost_StartIndex] += sign * egPhase;
+                    }
+                    break;
+                }
+                case PieceType.Rook: {
+                    // (SEMI-) OPEN FILE
+                    // First condition checks for friendly pawns on the same file (semi-open file)
+                    // Second condition checks for enemy pawns on the same file (open file)
+                    if ((this.Engine.fileMasks[actualSquare] & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) === 0n) {
+                        if ((this.Engine.fileMasks[actualSquare] & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * (piece.Color ^ 1))]) === 0n) {
+                            rawNormals[indexes.MG_RookOpenFileBonus_StartIndex] += sign * mgPhase;
+                        }
+                        else {
+                            rawNormals[indexes.MG_RookSemiOpenFileBonus_StartIndex] += sign * mgPhase;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Material coeffs
+        for (let piece = 0; piece <= 4; piece++) {
+            const whiteCount = this.Engine.CountBits(this.Engine.BoardState.PiecesBB[piece]);
+            const blackCount = this.Engine.CountBits(this.Engine.BoardState.PiecesBB[piece + 6]);
+            rawNormals[indexes.MG_Material_StartIndex + piece] = (whiteCount - blackCount) * mgPhase;
+            rawNormals[indexes.EG_Material_StartIndex + piece] = (whiteCount - blackCount) * egPhase;
+        }
+
+        for (let [index, normal] of rawNormals.entries()) {
+            if (normal !== 0) {
+                normals.push({ index, value: normal });
+            }
+        }
+
+        return normals;
+    }
 }
 
-Tune(10000, 0);
+class Quiescer {
+    Engine: Khepri = new Khepri();
+    Result: string = "";
+
+    QuiescePosition(position: string) {
+        this.Result = "";
+        this.Engine.Reset();
+        this.Engine.LoadFEN(position);
+        const pv: number[] = [];
+        this.Quiesce(-60000, 60000, pv);
+
+        // Quiet the position
+        for (let move of pv) {
+            this.Engine.MakeMove(move);
+        }
+
+        this.Result = this.Engine.GenerateFEN();
+    }
+
+    Quiesce(alpha: number, beta: number, pv: number[]) {
+        const staticEval = this.Engine.Evaluate();
+
+        if (staticEval >= beta) {
+            return beta;
+        }
+
+        if (staticEval > alpha) {
+            alpha = staticEval;
+        }
+
+        let bestScore = staticEval;
+        const moves = this.Engine.SortMoves(this.Engine.GenerateMoves(true), 0, 0);
+        const newPv: number[] = [];
+
+        for (let i = 0; i < moves.length; i++) {
+            const move = this.Engine.NextMove(moves, i).move;
+            
+            if (!this.Engine.MakeMove(move)) {
+                this.Engine.UnmakeMove(move);
+                continue;
+            }
+
+            let score = -this.Quiesce(-beta, -alpha, newPv);
+            this.Engine.UnmakeMove(move);
+
+            if (score > bestScore) {
+                bestScore = score;
+            }
+
+            if (score >= beta) {
+                break;
+            }
+
+            if (score > alpha) {
+                alpha = score;
+                pv.length = 0;
+                pv.push(move);
+                pv.push(...newPv);
+            }
+
+            newPv.length = 0;
+        }
+
+        return bestScore;
+    }
+}
+
+class Game {
+    private Engine = new Khepri();
+    Result: string | null = null;
+    Positions: string[];
+
+    constructor() {
+        this.Positions = [];
+    }
+
+    private readonly CharToPiece = new Map([
+        ["N", PieceType.Knight],
+        ["B", PieceType.Bishop],
+        ["R", PieceType.Rook],
+        ["Q", PieceType.Queen],
+        ["K", PieceType.King],
+    ]);
+
+    Reset() {
+        this.Positions.length = 0;
+        this.Result = null;
+        this.Engine.Reset();
+        this.Engine.LoadFEN(Khepri.positions.start);
+    }
+
+    CoordsToSquare(coords: string) {
+        if (coords.length !== 2) {
+            throw new Error(`Incorrect length on coords: ${coords}`);
+        }
+
+        const file = coords.charCodeAt(0) - "a".charCodeAt(0);
+        const rank = coords.charCodeAt(1) - '1'.charCodeAt(0);
+
+        const square = (rank * 8 + file) ^ 56;
+
+        if (square > 63 || square < 0) {
+            throw new Error(`Square from coords outside of board bounds: ${coords}`);
+        }
+
+        return square;
+    }
+
+    GetSANMove(sanmove: string, line: string) {
+        // Check or checkmate symbol aren't required
+        if (sanmove.endsWith("+") || sanmove.endsWith("#")) {
+            sanmove = sanmove.slice(0, -1); 
+        }
+
+        if (sanmove === "O-O") {
+            const kingSquare = this.Engine.GetLS1B(this.Engine.BoardState.PiecesBB[PieceType.King + (6 * this.Engine.BoardState.SideToMove)]);
+            if (this.Engine.BoardState.SideToMove === Color.White) {
+                return this.Engine.EncodeMove(kingSquare, this.Engine.BoardState.CastlingRookSquares[CastlingRights.WhiteKingside], MoveType.KingCastle);
+            }
+            else {
+                return this.Engine.EncodeMove(kingSquare, this.Engine.BoardState.CastlingRookSquares[CastlingRights.BlackKingside], MoveType.KingCastle);
+            }
+        }
+
+        if (sanmove === "O-O-O") {
+            const kingSquare = this.Engine.GetLS1B(this.Engine.BoardState.PiecesBB[PieceType.King + (6 * this.Engine.BoardState.SideToMove)]);
+            if (this.Engine.BoardState.SideToMove === Color.White) {
+                return this.Engine.EncodeMove(kingSquare, this.Engine.BoardState.CastlingRookSquares[CastlingRights.WhiteQueenside], MoveType.QueenCastle);
+            }
+            else {
+                return this.Engine.EncodeMove(kingSquare, this.Engine.BoardState.CastlingRookSquares[CastlingRights.BlackQueenside], MoveType.QueenCastle);
+            }
+        }
+
+        const moves = sanmove.includes("x") ? this.Engine.GenerateMoves(true) : this.Engine.GenerateMoves();
+
+        const sanPiece = sanmove.charAt(0) === sanmove.charAt(0).toLowerCase() ? PieceType.Pawn : this.CharToPiece.get(sanmove.charAt(0)) as PieceType;
+
+        for (let move of moves) {
+            const from = this.Engine.MoveFrom(move);
+            const to = this.Engine.MoveTo(move);
+            const piece = this.Engine.BoardState.Squares[from] as Piece;
+            const moveString = this.Engine.StringifyMove(move);
+
+            if (piece.Type !== sanPiece) {
+                continue;
+            }
+
+            if (sanPiece === PieceType.Pawn) {
+                let sanTo = -1;
+
+                if (sanmove.includes("x")) {
+                    sanTo = this.CoordsToSquare(sanmove.substring(2, 4));
+                }
+                else if (sanmove.includes("=")) {
+                    sanTo = this.CoordsToSquare(sanmove.substring(0, 2));
+                }
+                else {
+                    sanTo = this.CoordsToSquare(sanmove);
+                }
+
+                // skip if the to squares don't match
+                if (sanTo !== to) {
+                    continue;
+                }
+
+                // skip if the from squares' files don't match
+                if ((sanmove.charCodeAt(0) - 97) !== (from & 7)) {
+                    continue;
+                }
+
+                // promotion
+                if (sanmove.includes("=")) {
+                    // skip moves in the list that aren't a promotion if the san move is a promotion
+                    if (!this.Engine.IsPromotion(move)) {
+                        continue;
+                    }
+
+                    const promotionType = sanmove.charAt(sanmove.length - 1);
+
+                    // skip if the promotion pieces don't match
+                    if (promotionType.toLowerCase() !== moveString.charAt(moveString.length - 1)) {
+                        continue;
+                    }
+
+                    if (!this.Engine.MakeMove(move)) {
+                        this.Engine.UnmakeMove(move);
+                        continue;
+                    }
+                    this.Engine.UnmakeMove(move);
+                    
+                    return move;
+                }
+                
+                if (!this.Engine.MakeMove(move)) {
+                    this.Engine.UnmakeMove(move);
+                    continue;
+                }
+                this.Engine.UnmakeMove(move);
+
+                return move;
+            }
+
+            if (sanmove.includes("x")) {
+                if (!this.Engine.IsCapture(move)) {
+                    continue;
+                }
+
+                const coords = sanmove.substring(sanmove.indexOf("x") + 1);
+                const sanTo = this.CoordsToSquare(coords);
+
+                if (sanTo !== to) {
+                    continue;
+                }
+
+                // move has disambiguation (e.g. R5xh4)
+                if (sanmove.length > 4) {
+                    // disambiguator is a letter (file)
+                    if (isNaN(+sanmove.charAt(1))) {
+                        if (moveString.charAt(0) !== sanmove.charAt(1)) {
+                            continue;
+                        }
+                    }
+                    // disambiguator is a number (rank)
+                    else {
+                        if (moveString.charAt(1) !== sanmove.charAt(1)) {
+                            continue;
+                        }
+                    }
+                }
+                else {
+                    if (sanmove.charAt(1) !== "x" && (sanmove.charCodeAt(0) - 97) !== (to & 7)) {
+                        continue;
+                    }
+                }
+
+                if (!this.Engine.MakeMove(move)) {
+                    this.Engine.UnmakeMove(move);
+                    continue;
+                }
+                this.Engine.UnmakeMove(move);
+
+                return move;
+            }
+
+            const sanTo = this.CoordsToSquare(sanmove.substring(sanmove.length - 2));
+            
+            if (sanTo !== to) {
+                continue;
+            }
+
+            // move has disambiguation (e.g. Rad1 or R7a4)
+            if (sanmove.length > 3) {
+                // disambiguator is a letter (file)
+                if (isNaN(+sanmove.charAt(1))) {
+                    if (moveString.charAt(0) !== sanmove.charAt(1)) {
+                        continue;
+                    }
+                }
+                // disambiguator is a number (rank)
+                else {
+                    if (moveString.charAt(1) !== sanmove.charAt(1)) {
+                        continue;
+                    }
+                }
+            }
+
+            // At this point there's a possible matching move, BUT...
+            // Some moves that might normally be disambiguated might not be if
+            // the other possible piece move would leave the king in check
+            // Example: rnb1k2r/p2nppbp/2pp2p1/q7/2B1PP1Q/2N5/PPP3PP/R1B1K1NR w KQq - 7 13
+            // There are two knights that could move to e2, but one of them can't move
+            // without leaving the king in check.
+            // So check that the move is legal
+            if (!this.Engine.MakeMove(move)) {
+                this.Engine.UnmakeMove(move);
+                continue;
+            }
+            this.Engine.UnmakeMove(move);
+
+            return move;
+        }
+
+        // This is only reached if there's a problem and we can't continue;
+        this.Engine.PrintBoard();
+        throw new Error(`Unable to get a valid move for ${sanmove}. Line: ${line}`);
+    }
+
+    MakeMove(move: number) {
+        this.Engine.MakeMove(move);
+        this.Positions.push(this.Engine.GenerateFEN());
+    }
+}
+
+class PGNParser {
+    private readonly NumPositionsPerGame = 4;
+    private readonly MinGameLength = 15;
+    private SourceFile!: readline.Interface;
+    private ResultFile = fs.createWriteStream(path.join(__dirname, "positions.txt"), 'utf-8');
+    private Positions: Set<string> = new Set();
+
+    private Quiescer = new Quiescer();
+    private Game = new Game();
+    private FileSize = 0;
+
+    /**
+     * Generate tuning data from a file containing PGNs
+     * @param fileName Just the filename, no path information.
+     */
+    async ParseFile(fileName: string) {
+        this.FileSize = fs.statSync(fileName).size;
+        const readStream = fs.createReadStream(path.join(__dirname, fileName), 'utf-8');
+        this.SourceFile = readline.createInterface({ input: readStream });
+
+        console.log(`Parsing PGN file: ${fileName}`);
+        await this.GetPositions();
+        console.log("Finished parsing PGN file");
+
+        // for (let position of this.Positions) {
+        //     this.ResultFile.write(position);
+        // }
+
+        this.ResultFile.close();
+        readStream.close();
+    }
+
+    ParseGame(positions: string[], result: string) {
+        // this.Quiescer.Engine.Reset();
+
+        // Skip games that don't have enough positions
+        if (positions.length <= this.MinGameLength) {
+            console.log(`Skipped game. Has ${positions.length} positions (min ${this.MinGameLength}).`);
+            return;
+        }
+
+        let i = 0;
+        let attempts = 0;
+        let previousRandoms: number[] = [];
+
+        while (i < this.NumPositionsPerGame && attempts < 20) {
+            // random position (no position within the first 5 moves)
+            const rand = Math.floor(Math.random() * ((positions.length - 1) - 3 + 1) + 3);
+
+            // Don't use a position that's within 4 plys of another position (within the same game)
+            for (let random of previousRandoms) {
+                if (rand >= random - 4 && rand <= random + 4) {
+                    attempts++;
+                    continue;
+                }
+            }
+
+            const pos = positions[rand];
+
+            // Don't use duplicate positions
+            if (this.Positions.has(pos)) {
+                attempts++;
+                continue;
+            }
+
+            try {
+                this.Quiescer.QuiescePosition(pos);
+            }
+            catch {
+                console.log(`Error quiescing position ${pos}`);
+                continue;
+            }
+
+            this.Positions.add(`${this.Quiescer.Result} c9 "${result}";\n`);
+            this.ResultFile.write(`${this.Quiescer.Result} c9 "${result}";\n`);
+
+            i++;
+        }
+    }
+
+    ParseMoveLine(line: string) {
+        let index = 0;
+
+        while (index < line.length && index >= 0) {
+            // Skip whitespaces
+            while (line[index] === " ") {
+                index++;
+            }
+
+            let end = line.indexOf(" ", index);
+
+            if (end === -1) {
+                end = line.length;
+            }
+
+            const token = line.substring(index, end);
+
+            // skip "tokens" that are comments
+            if (token.startsWith("{")) {
+                if (token.endsWith("}")) {
+                    end = index + token.length;
+                }
+                else {
+                    end = line.indexOf("}", index) + 1;
+                }
+
+                index = end;
+                continue;
+            }
+
+            // skip "tokens" that are move numbers
+            if (token.endsWith(".")) {
+                index = end;
+                continue;
+            }
+
+            // skip the result token at the end
+            if (token === "1-0" || token === "0-1" || token === "1/2-1/2") {
+                return true;
+            }
+
+            let move = this.Game.GetSANMove(token, line);
+
+            if (move === 0) {
+                throw new Error(`Unable to get encoded move for move: ${token}`);
+            }
+
+            this.Game.MakeMove(move);
+
+            index = end;
+        }
+
+        return false;
+    }
+
+    async GetPositions() {
+        let bytesRead = 0;
+        const progress = new CLIProgress.SingleBar({
+            format: '{bar} | {percentage}% | {value}/{total} bytes | Elapsed time: {duration_formatted} | ETA: {eta_formatted}',
+            barCompleteChar: '\u2588',
+            barIncompleteChar: '\u2591',
+            hideCursor: true,
+            etaBuffer: 1000,
+        });
+        progress.start(this.FileSize, 0);
+
+        for await (const line of this.SourceFile) {
+            bytesRead += line.length + 1; // +1 to read the \n character
+            progress.update(bytesRead);
+
+            if (line === null || line === "") {
+                continue;
+            }
+
+            if (line.startsWith("[Result ")) {
+                this.Game.Reset();
+                const stop = line.indexOf("]");
+                let result = line.substring(9, stop - 1);
+
+                if (result === "1-0" || result === "0-1" || result === "1/2-1/2") {
+                    this.Game.Result = result;
+                }
+                else {
+                    throw new Error(`Unable to parse result from line: ${line}`);
+                }
+            }
+            else if (!line.startsWith("[")) {
+                const end = this.ParseMoveLine(line);
+
+                if (end) {
+                    if (this.Game.Result === null) {
+                        throw new Error("Unable to record game with null result");
+                    }
+
+                    this.ParseGame(this.Game.Positions, this.Game.Result);
+                }
+            }
+        }
+
+        progress.stop();
+    }
+}
+
+// const tuner = new PGNParser();
+// tuner.ParseFile("tuning.pgn");
+const tuner = new Tuner();
+tuner.Tune(30000, 0);

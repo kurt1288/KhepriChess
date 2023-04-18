@@ -4,7 +4,7 @@
  * https://github.com/algerbrex/blunder/tree/main/tuner
  */
 
-import { LoadWeights, GetCoefficients, Evaluate, engine } from './tuner';
+import Tuner from './tuner';
 
 const TestFENs = [
 	"8/3k1p2/R7/P1Pb2P1/3P4/4KP2/6P1/8 b - - 0 1",
@@ -210,19 +210,20 @@ const TestFENs = [
 ];
 
 function TestTune() {
-    const { weights, indexes} = LoadWeights();
+	const tuner = new Tuner();
+    const { weights, indexes} = tuner.LoadWeights();
     
     for (const fen of TestFENs) {
-        engine.LoadFEN(fen);
+        tuner.Engine.LoadFEN(fen);
 
-        let engineEval = engine.Evaluate();
+        let engineEval = tuner.Engine.Evaluate();
 
-        if (engine.Position.SideToMove === 1) {
+        if (tuner.Engine.BoardState.SideToMove === 1) {
             engineEval = -engineEval;
         }
 
-        const coefficients = GetCoefficients(indexes, weights.length);
-        const tunerEval = Evaluate(weights, coefficients);
+        const coefficients = tuner.GetCoefficients(indexes, weights.length);
+        const tunerEval = tuner.Evaluate(weights, coefficients);
 
         if (Math.abs(engineEval - tunerEval) > 1.5) {
             console.error(`Position ${fen} got ${engineEval} from the engine evaluation but ${tunerEval} from the tuner evaluation`);

@@ -111,6 +111,7 @@ const tuneConfig = {
          }
       ]
    },
+   plugins,
    resolve: {
       extensions: [ '.tsx', '.ts', '.js' ],
    },

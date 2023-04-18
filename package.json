@@ -10,6 +10,7 @@
   "devDependencies": {
     "@babel/preset-env": "^7.18.9",
     "@babel/preset-typescript": "^7.18.6",
+    "@types/cli-progress": "^3.11.0",
     "@types/jest": "^27.4.0",
     "jest": "^27.4.7",
     "ts-loader": "^9.2.7",
@@ -17,5 +18,8 @@
     "webpack": "^5.69.1",
     "webpack-cli": "^4.10.0",
     "webpack-dev-server": "^4.9.3"
+  },
+  "dependencies": {
+    "cli-progress": "^3.12.0"
   }
 }
