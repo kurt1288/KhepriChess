@@ -2121,7 +2121,7 @@ class Khepri {
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)]), this.BoardState.SideToMove ^ 1);
 
         // Static null move pruning (reverse futility pruning)
-        if (!inCheck && !isPVNode && depth <= 5 && staticEval - 100 * depth >= beta && Math.abs(staticEval) < (this.INFINITY - this.BoardState.Ply)) {
+        if (!inCheck && !isPVNode && depth <= 5 && staticEval - 60 * depth >= beta && Math.abs(staticEval) < (this.INFINITY - this.BoardState.Ply)) {
             return staticEval;
         }
 
