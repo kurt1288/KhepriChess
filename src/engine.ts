@@ -1973,6 +1973,7 @@ class Khepri {
     private killerMoves = Array(this.MAXPLY).fill(0).map(() => Array(2).fill(0));
     private historyMoves = Array(2).fill(0).map(() => Array(64).fill(0).map(() => Array(64).fill(0))); // 2 64x64 arrays
     private counterMoves = Array(64).fill(0).map(() => Array(64).fill(0));
+    private bestMoveScore = { move: 0, score: -this.INFINITY };
 
     GetPv() {
         let pv = "";
@@ -2208,6 +2209,10 @@ class Khepri {
                 alpha = score;
                 hashFlag = HashFlag.Exact;
                 this.UpdatePv(move);
+
+                // If the search score, plus a margin, is below the current best score, we should extend the search
+                this.Timer.extended = depth > 1 && score + 35 < this.bestMoveScore.score;
+                this.bestMoveScore = { move: bestMove, score: bestScore };
             }
 
             if (alpha >= beta) {
@@ -2704,6 +2709,25 @@ class Khepri {
     CheckTime() {
         // Never need to stop if there is no limit on search time
         if (!this.Timer.stop && this.Timer.timeleft === -1 && this.Timer.movetime === -1) {
+            return;
+        }
+
+        if (Date.now() > this.Timer.stopTime) {
+            if (this.Timer.movetime !== -1) {
+                this.Timer.stop = true;
+                return;
+            }
+
+            if (!this.Timer.extended) {
+                this.Timer.stop = true;
+                return;
+            }
+
+            if (Date.now() - this.Timer.startTime >= this.Timer.timeleft * 0.60) {
+                this.Timer.stop = true;
+                return;
+            }
+
             return;
         }
 
