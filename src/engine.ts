@@ -2106,6 +2106,7 @@ class Khepri {
         let ttMove = 0;
         let legalMoves = 0;
         let quietMoves = [];
+        let score = -this.INFINITY;
 
         const entry = this.GetEntry(this.BoardState.Hash);
 
@@ -2172,26 +2173,27 @@ class Khepri {
 
             legalMoves++;
 
-            let score = -this.INFINITY;
             let E = inCheck ? 1 : 0;
 
-            if (depth > 3 && legalMoves > 4) {
+            // Late move reductions
+            if (depth >= 3 && i > 4) {
                 let R = 1 / (4 / depth) | 0;
                 R = Math.max(0, R);
 
                 score = -this.NegaScout(-alpha - 1, -alpha, depth - 1 - R + E, move, true);
 
-                // If the search failed high, do another full-depth search
-                if (score > alpha && R > 0) {
-                    score = -this.NegaScout(-b, -alpha, depth - 1 + E, move, true);
+                // if the reduced-depth search fails low, skip the move
+                if (score <= alpha) {
+                    this.UnmakeMove(move);
+                    continue;
                 }
             }
-            else {
-                score = -this.NegaScout(-b, -alpha, depth - 1 + E, move, true);
 
-                if ((score > alpha) && (score < beta) && (i > 1)) {
-                    score = -this.NegaScout(-beta, -alpha, depth - 1 + E, move, true);
-                }
+            // reduced window search, if not doing LMR or if LMR did not fail low
+            score = -this.NegaScout(-b, -alpha, depth - 1 + E, move, true);
+
+            if ((score > alpha) && (score < beta) && (i > 1)) {
+                score = -this.NegaScout(-beta, -alpha, depth - 1 + E, move, true); /* re-search with wider window */
             }
 
             this.UnmakeMove(move);
