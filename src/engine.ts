@@ -1620,8 +1620,14 @@ class Khepri {
     TTSize = BigInt((32 * 1024 * 1024) / 16); // as bigint for faster/easier operations against hashes
     TTUsed = 0;
 
-    ResiseTranspositionTable() {
-
+    /**
+     * Resize the transposition table to the provided size
+     * @param size The size, in MB, to set the hash table to
+     */
+    ResizeTranspositionTable(size: number) {
+        this.TranspositionTables = Array((size * 1024 * 1024) / 16).fill(null);
+        this.TTSize = BigInt((size * 1024 * 1024) / 16);
+        this.TTUsed = 0;
     }
 
     /**
