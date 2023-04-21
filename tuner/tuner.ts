@@ -389,7 +389,7 @@ class Quiescer {
         }
 
         let bestScore = staticEval;
-        const moves = this.Engine.SortMoves(this.Engine.GenerateMoves(true), 0, 0);
+        const moves = this.Engine.ScoreMoves(this.Engine.GenerateMoves(true), 0, 0);
         const newPv: number[] = [];
 
         for (let i = 0; i < moves.length; i++) {

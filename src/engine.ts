@@ -1162,7 +1162,7 @@ class Khepri {
         return moveList;
     }
 
-    SortMoves(moves: number[], ttMove: number, previousMove: number) {
+    ScoreMoves(moves: number[], ttMove: number, previousMove: number) {
         let scored = [];
 
         for (let i = 0; i < moves.length; i++) {
@@ -1195,7 +1195,6 @@ class Khepri {
             }
         }
 
-        // return scored.sort((a, b) => b.score - a.score);
         return scored;
     }
 
@@ -1994,7 +1993,7 @@ class Khepri {
             return `mate ${((this.INFINITY - score + 1) / 2)}`;
         }
 
-        return `cp ${score}`;
+        return `cp ${score | 0}`;
     }
 
     UpdatePv(move: number) {
@@ -2094,7 +2093,6 @@ class Khepri {
         }
 
         if (depth <= 0) {
-            // return this.Evaluate();
             return this.Quiescence(alpha, beta, previousMove);
         }
 
@@ -2148,11 +2146,10 @@ class Khepri {
             }
         }
 
-        const moves = this.SortMoves(this.GenerateMoves(), ttMove, previousMove);
+        const moves = this.ScoreMoves(this.GenerateMoves(), ttMove, previousMove);
 
         for (let i = 0; i < moves.length; i++) {
             const move = this.NextMove(moves, i).move;
-            // const move = moves[i].move;
 
             if (!isPVNode && !inCheck && !this.IsCapture(move) && !this.IsPromotion(move)) {
                 // futility pruning
@@ -2305,7 +2302,7 @@ class Khepri {
 
         let bestScore = staticEval;
         let bestMove = 0;
-        const moves = this.SortMoves(this.GenerateMoves(true), ttMove, previousMove);
+        const moves = this.ScoreMoves(this.GenerateMoves(true), ttMove, previousMove);
 
         for (let i = 0; i < moves.length; i++) {
             const move = this.NextMove(moves, i).move;
@@ -2592,12 +2589,6 @@ class Khepri {
         const { hash, pawnHash } = this.GenerateHashes();
         this.BoardState.Hash = hash;
         this.BoardState.PawnHash = pawnHash;
-
-        // this.PositionHistory.length = 0;
-        // this.PositionHistory[0] = this.BoardState.Hash;
-
-        // this.KingSquares[0] = 0;
-        // this.KingSquares[1] = 0;
     }
 
     /**
