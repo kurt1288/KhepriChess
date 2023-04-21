@@ -2178,6 +2178,11 @@ class Khepri {
             // Late move reductions
             if (depth >= 3 && i > 4) {
                 let R = 1 / (4 / depth) | 0;
+
+                if (!this.IsCapture(move) && !this.IsPromotion(move)) {
+                    R++;
+                }
+
                 R = Math.max(0, R);
 
                 score = -this.NegaScout(-alpha - 1, -alpha, depth - 1 - R + E, move, true);
