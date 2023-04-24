@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import readline from "readline";
 import CLIProgress from "cli-progress";
-import Khepri, { CastlingRights, Color, MoveType, Piece, PieceType } from '.././src/engine';
+import Khepri, { CastlingRights, Color, Direction, MoveType, Piece, PieceType } from '.././src/engine';
 
 interface Indexes {
     MG_Material_StartIndex: number
@@ -12,6 +12,8 @@ interface Indexes {
     EG_KnightOutpost_StartIndex: number
     MG_RookOpenFileBonus_StartIndex: number;
     MG_RookSemiOpenFileBonus_StartIndex: number;
+    EG_PawnDuoMulti_StartIndex: number;
+    EG_PawnSupportMulti_StartIndex: number;
 }
 
 enum Outcome {
@@ -69,7 +71,7 @@ export default class Tuner {
         const errors: number[] = [];
     
         for (let epoch = 0; epoch < epochs; epoch++) {
-            let gradients = this.ComputeGradient(positions, weights, indexes);
+            let gradients = this.ComputeGradient(positions, weights);
     
             for (let [index, gradient] of gradients.entries()) {
                 const leadingCoefficent = (-2 * this.ScalingFactor) / N;
@@ -134,6 +136,8 @@ export default class Tuner {
         console.log(`EG Knight Outpost Score: ${weights.slice(indexes.EG_KnightOutpost_StartIndex, indexes.EG_KnightOutpost_StartIndex + 1).map(x => Math.round(x))}`);
         console.log(`Rook File Semi-Open Score: ${weights.slice(indexes.MG_RookSemiOpenFileBonus_StartIndex, indexes.MG_RookSemiOpenFileBonus_StartIndex + 1).map(x => Math.round(x))}`);
         console.log(`Rook File Open Score: ${weights.slice(indexes.MG_RookOpenFileBonus_StartIndex, indexes.MG_RookOpenFileBonus_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`EG Pawn Duo Multi: ${weights.slice(indexes.EG_PawnDuoMulti_StartIndex, indexes.EG_PawnDuoMulti_StartIndex + 8).map(x => Math.round(x))}`);
+        console.log(`EG Pawn Support Multi: ${weights.slice(indexes.EG_PawnSupportMulti_StartIndex, indexes.EG_PawnSupportMulti_StartIndex + 8).map(x => Math.round(x))}`);
     }
 
     Evaluate(weights: number[], normals: Coefficient[]) {
@@ -162,7 +166,7 @@ export default class Tuner {
         return errorSum / positions.length;
     }
 
-    ComputeGradient(positions: Position[], weights: number[], indexes: Indexes) {
+    ComputeGradient(positions: Position[], weights: number[]) {
         const gradients: number[] = new Array(weights.length).fill(0);
     
         for (let position of positions) {
@@ -191,6 +195,8 @@ export default class Tuner {
             EG_KnightOutpost_StartIndex: 0,
             MG_RookOpenFileBonus_StartIndex: 0,
             MG_RookSemiOpenFileBonus_StartIndex: 0,
+            EG_PawnDuoMulti_StartIndex: 0,
+            EG_PawnSupportMulti_StartIndex: 0,
         };
     
         let index = 0;
@@ -215,13 +221,21 @@ export default class Tuner {
         weights.splice(indexes.MG_KnightOutpost_StartIndex, 0, this.Engine.MGKnightOutpost);
 
         indexes.EG_KnightOutpost_StartIndex = index + 1;
-        weights.splice(indexes.MG_KnightOutpost_StartIndex, 0, this.Engine.EGKnightOutpost);
+        weights.splice(indexes.EG_KnightOutpost_StartIndex, 0, this.Engine.EGKnightOutpost);
 
         indexes.MG_RookOpenFileBonus_StartIndex = index + 2;
-        weights.splice(indexes.MG_KnightOutpost_StartIndex, 0, this.Engine.MGRookOpenFileBonus);
+        weights.splice(indexes.MG_RookOpenFileBonus_StartIndex, 0, this.Engine.MGRookOpenFileBonus);
 
         indexes.MG_RookSemiOpenFileBonus_StartIndex = index + 3;
-        weights.splice(indexes.MG_KnightOutpost_StartIndex, 0, this.Engine.MGRookSemiOpenFileBonus);
+        weights.splice(indexes.MG_RookSemiOpenFileBonus_StartIndex, 0, this.Engine.MGRookSemiOpenFileBonus);
+
+        index += 4;
+
+        indexes.EG_PawnDuoMulti_StartIndex = index;
+        weights.splice(indexes.EG_PawnDuoMulti_StartIndex, 0, ...this.Engine.PawnDuoMulti);
+
+        indexes.EG_PawnSupportMulti_StartIndex = index + 8;
+        weights.splice(indexes.EG_PawnSupportMulti_StartIndex, 0, ...this.Engine.PawnSupportMulti);
     
         return { weights, indexes };
     }
@@ -297,6 +311,7 @@ export default class Tuner {
             let actualSquare = square;
             allOccupancies = this.Engine.RemoveBit(allOccupancies, square);
             const piece = this.Engine.BoardState.Squares[square] as Piece;
+            const rank = piece.Color === Color.White ? 8 - (square >> 3) : 1 + (square >> 3);
             let sign = 1;
     
             // Because the PST are from white's perspective, we have to flip the square if the piece is black's
@@ -312,6 +327,23 @@ export default class Tuner {
             rawNormals[egIndex] += sign * egPhase;
 
             switch (piece.Type) {
+                case PieceType.Pawn: {
+                    // pawn duos (pawns with a neighboring pawn)
+                    if (this.Engine.Shift(this.Engine.squareBB[actualSquare], Direction.EAST) & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) {
+                        // mg[piece.Color] += 3 * this.PawnRankMulti[rank - 1]; // [0, 1, 1.25, 2, 5, 8, 15, 0]
+                        // eg[piece.Color] += this.Engine.PawnDuoMulti[rank - 1]; // [0, 10, 14, 25, 80, 150, 250, 0]
+                        rawNormals[indexes.EG_PawnDuoMulti_StartIndex + (rank - 1)] += sign * egPhase;
+                    }
+
+                    // defending pawn(s)?
+                    if (this.Engine.PawnAttacks[actualSquare + (64 * (piece.Color ^ 1))] & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) {
+                        // mg[piece.Color] += 2 * this.PawnRankMulti[rank - 1]; // [0, 1, 1.25, 2, 5, 8, 15, 0]
+                        // eg[piece.Color] += this.Engine.PawnSupportMulti[rank - 1]; // [0, 0, 25, 40, 75, 100, 225, 0]
+                        rawNormals[indexes.EG_PawnSupportMulti_StartIndex + (rank - 1)] += sign * egPhase;
+                    }
+
+                    break;
+                }
                 case PieceType.Knight: {
                     // OUTPOSTS:
                     // First condition checks if the square is defended by a pawn,
@@ -689,7 +721,12 @@ class PGNParser {
 
         // Skip games that don't have enough positions
         if (positions.length <= this.MinGameLength) {
-            console.log(`Skipped game. Has ${positions.length} positions (min ${this.MinGameLength}).`);
+            // console.log(`Skipped game. Has ${positions.length} positions (min ${this.MinGameLength}).`);
+            return;
+        }
+
+        if (positions.length >= 130 && result === "1/2-1/2") {
+            // console.log(`Skipped game. Has ${positions.length} and ends in a draw.`);
             return;
         }
 
@@ -798,6 +835,8 @@ class PGNParser {
         });
         progress.start(this.FileSize, 0);
 
+        let skipGame = false;
+
         for await (const line of this.SourceFile) {
             bytesRead += line.length + 1; // +1 to read the \n character
             progress.update(bytesRead);
@@ -808,6 +847,7 @@ class PGNParser {
 
             if (line.startsWith("[Result ")) {
                 this.Game.Reset();
+                skipGame = false;
                 const stop = line.indexOf("]");
                 let result = line.substring(9, stop - 1);
 
@@ -815,10 +855,19 @@ class PGNParser {
                     this.Game.Result = result;
                 }
                 else {
-                    throw new Error(`Unable to parse result from line: ${line}`);
+                    // throw new Error(`Unable to parse result from line: ${line}`);
+                    skipGame = true;
                 }
             }
-            else if (!line.startsWith("[")) {
+            else if (line.startsWith("[Termination ")) {
+                const stop = line.indexOf("]");
+                let result = line.substring(14, stop - 1);
+
+                if (result === "illegal move") {
+                    skipGame = true;
+                }
+            }
+            else if (!line.startsWith("[") && !skipGame) {
                 const end = this.ParseMoveLine(line);
 
                 if (end) {
@@ -838,4 +887,4 @@ class PGNParser {
 // const tuner = new PGNParser();
 // tuner.ParseFile("tuning.pgn");
 const tuner = new Tuner();
-tuner.Tune(30000, 0);
+tuner.Tune(50000, 0);
