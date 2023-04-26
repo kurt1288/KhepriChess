@@ -1949,6 +1949,7 @@ class Khepri {
             pawns = this.RemoveBit(pawns, square);
             const piece = this.BoardState.Squares[square] as Piece;
             const rank = piece.Color === Color.White ? 8 - (square >> 3) : 1 + (square >> 3);
+            const up = piece.Color === Color.White ? Direction.NORTH : Direction.SOUTH;
 
             if (piece.Color === Color.Black) {
                 square ^= 56;
@@ -1964,6 +1965,12 @@ class Khepri {
             if (this.PawnAttacks[actualSquare + (64 * (piece.Color ^ 1))] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) {
                 //mg[piece.Color] += 2 * this.PawnRankMulti[rank - 1]; // [0, 1, 1.25, 2, 5, 8, 15, 0]
                 eg[piece.Color] += this.PawnSupportMulti[rank - 1]; // [0, 0, 25, 40, 75, 100, 225, 0]
+            }
+
+            // doubled pawn
+            if ((this.Shift(this.squareBB[actualSquare], up * -1) & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) !== 0n) {
+                mg[piece.Color] -= 5;
+                eg[piece.Color] -= 15;
             }
 
             // PST and material scores
