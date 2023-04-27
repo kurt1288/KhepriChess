@@ -14,6 +14,10 @@ interface Indexes {
     MG_RookSemiOpenFileBonus_StartIndex: number;
     EG_PawnDuoMulti_StartIndex: number;
     EG_PawnSupportMulti_StartIndex: number;
+    MG_DoubledPawn_StartIndex: number;
+    EG_DoubledPawn_StartIndex: number;
+    MG_PassedPawn_StartIndex: number;
+    EG_PassedPawn_StartIndex: number;
 }
 
 enum Outcome {
@@ -136,8 +140,12 @@ export default class Tuner {
         console.log(`EG Knight Outpost Score: ${weights.slice(indexes.EG_KnightOutpost_StartIndex, indexes.EG_KnightOutpost_StartIndex + 1).map(x => Math.round(x))}`);
         console.log(`Rook File Semi-Open Score: ${weights.slice(indexes.MG_RookSemiOpenFileBonus_StartIndex, indexes.MG_RookSemiOpenFileBonus_StartIndex + 1).map(x => Math.round(x))}`);
         console.log(`Rook File Open Score: ${weights.slice(indexes.MG_RookOpenFileBonus_StartIndex, indexes.MG_RookOpenFileBonus_StartIndex + 1).map(x => Math.round(x))}`);
-        console.log(`EG Pawn Duo Multi: ${weights.slice(indexes.EG_PawnDuoMulti_StartIndex, indexes.EG_PawnDuoMulti_StartIndex + 8).map(x => Math.round(x))}`);
-        console.log(`EG Pawn Support Multi: ${weights.slice(indexes.EG_PawnSupportMulti_StartIndex, indexes.EG_PawnSupportMulti_StartIndex + 8).map(x => Math.round(x))}`);
+        console.log(`EG Pawn Duo Multi: ${weights.slice(indexes.EG_PawnDuoMulti_StartIndex, indexes.EG_PawnDuoMulti_StartIndex + 7).map(x => Math.round(x))}`);
+        console.log(`EG Pawn Support Multi: ${weights.slice(indexes.EG_PawnSupportMulti_StartIndex, indexes.EG_PawnSupportMulti_StartIndex + 7).map(x => Math.round(x))}`);
+        console.log(`MG Doubled Pawn: ${weights.slice(indexes.MG_DoubledPawn_StartIndex, indexes.MG_DoubledPawn_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`EG Doubled Pawn: ${weights.slice(indexes.EG_DoubledPawn_StartIndex, indexes.EG_DoubledPawn_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`MG Passed Pawn: ${weights.slice(indexes.MG_PassedPawn_StartIndex, indexes.MG_PassedPawn_StartIndex + 7).map(x => Math.round(x))}`);
+        console.log(`EG Passed Pawn: ${weights.slice(indexes.EG_PassedPawn_StartIndex, indexes.EG_PassedPawn_StartIndex + 7).map(x => Math.round(x))}`);
     }
 
     Evaluate(weights: number[], normals: Coefficient[]) {
@@ -197,6 +205,10 @@ export default class Tuner {
             MG_RookSemiOpenFileBonus_StartIndex: 0,
             EG_PawnDuoMulti_StartIndex: 0,
             EG_PawnSupportMulti_StartIndex: 0,
+            MG_DoubledPawn_StartIndex: 0,
+            EG_DoubledPawn_StartIndex: 0,
+            MG_PassedPawn_StartIndex: 0,
+            EG_PassedPawn_StartIndex: 0,
         };
     
         let index = 0;
@@ -234,8 +246,20 @@ export default class Tuner {
         indexes.EG_PawnDuoMulti_StartIndex = index;
         weights.splice(indexes.EG_PawnDuoMulti_StartIndex, 0, ...this.Engine.PawnDuoMulti);
 
-        indexes.EG_PawnSupportMulti_StartIndex = index + 8;
+        indexes.EG_PawnSupportMulti_StartIndex = index + 7;
         weights.splice(indexes.EG_PawnSupportMulti_StartIndex, 0, ...this.Engine.PawnSupportMulti);
+
+        indexes.MG_DoubledPawn_StartIndex = weights.length;
+        weights.splice(indexes.MG_DoubledPawn_StartIndex, 0, this.Engine.MGDoubledPawn);
+
+        indexes.EG_DoubledPawn_StartIndex = weights.length;
+        weights.splice(indexes.EG_DoubledPawn_StartIndex, 0, this.Engine.EGDoubledPawn);
+
+        indexes.MG_PassedPawn_StartIndex = weights.length;
+        weights.splice(indexes.MG_PassedPawn_StartIndex, 0, ...this.Engine.MGPassedPawnRank);
+
+        indexes.EG_PassedPawn_StartIndex = weights.length;
+        weights.splice(indexes.EG_PassedPawn_StartIndex, 0, ...this.Engine.EGPassedPawnRank);
     
         return { weights, indexes };
     }
@@ -312,6 +336,7 @@ export default class Tuner {
             allOccupancies = this.Engine.RemoveBit(allOccupancies, square);
             const piece = this.Engine.BoardState.Squares[square] as Piece;
             const rank = piece.Color === Color.White ? 8 - (square >> 3) : 1 + (square >> 3);
+            const up = piece.Color === Color.White ? Direction.NORTH : Direction.SOUTH;
             let sign = 1;
     
             // Because the PST are from white's perspective, we have to flip the square if the piece is black's
@@ -340,6 +365,18 @@ export default class Tuner {
                         // mg[piece.Color] += 2 * this.PawnRankMulti[rank - 1]; // [0, 1, 1.25, 2, 5, 8, 15, 0]
                         // eg[piece.Color] += this.Engine.PawnSupportMulti[rank - 1]; // [0, 0, 25, 40, 75, 100, 225, 0]
                         rawNormals[indexes.EG_PawnSupportMulti_StartIndex + (rank - 1)] += sign * egPhase;
+                    }
+
+                    // doubled pawns
+                    if ((this.Engine.Shift(this.Engine.squareBB[actualSquare], up * -1) & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) !== 0n) {
+                        rawNormals[indexes.MG_DoubledPawn_StartIndex] -= sign * mgPhase;
+                        rawNormals[indexes.EG_DoubledPawn_StartIndex] -= sign * egPhase;
+                    }
+
+                    // passed pawns
+                    if ((this.Engine.Fill(up * -1, actualSquare) & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) === 0n && (this.Engine.passedMasks[piece.Color][square] & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * (piece.Color ^ 1))]) === 0n) {
+                        rawNormals[indexes.MG_PassedPawn_StartIndex + (rank - 1)] += sign * mgPhase;
+                        rawNormals[indexes.EG_PassedPawn_StartIndex + (rank - 1)] += sign * egPhase;
                     }
 
                     break;
@@ -887,4 +924,4 @@ class PGNParser {
 // const tuner = new PGNParser();
 // tuner.ParseFile("tuning.pgn");
 const tuner = new Tuner();
-tuner.Tune(50000, 0);
+tuner.Tune(30000, 0);
