@@ -524,7 +524,6 @@ class Khepri {
             this.squareBB[square] = this.SetBit(0n, square);
             this.rankMasks[square] = 0xffn << (BigInt(square) & 56n);
             this.fileMasks[square] = 0x0101010101010101n << (BigInt(square) & 7n);
-            this.isolatedMasks[square] = this.fileMasks[square] << 1n | this.fileMasks[square] >> 1n;
             this.isolatedMasks[square] = (this.fileMasks[square] & this.notHFile) << 1n | (this.fileMasks[square] & this.notAFile) >> 1n;
 
             /* * * * * * * * * * * * * * * * * * * *
