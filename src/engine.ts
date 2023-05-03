@@ -2350,7 +2350,7 @@ class Khepri {
         const staticEval = this.Evaluate();
 
         if (staticEval >= beta) {
-            return beta;
+            return staticEval;
         }
 
         if (staticEval > alpha) {
