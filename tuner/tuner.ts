@@ -18,6 +18,8 @@ interface Indexes {
     EG_DoubledPawn_StartIndex: number;
     MG_PassedPawn_StartIndex: number;
     EG_PassedPawn_StartIndex: number;
+    MG_BishopPair_StartIndex: number;
+    EG_BishopPair_StartIndex: number;
 }
 
 enum Outcome {
@@ -146,6 +148,8 @@ export default class Tuner {
         console.log(`EG Doubled Pawn: ${weights.slice(indexes.EG_DoubledPawn_StartIndex, indexes.EG_DoubledPawn_StartIndex + 1).map(x => Math.round(x))}`);
         console.log(`MG Passed Pawn: ${weights.slice(indexes.MG_PassedPawn_StartIndex, indexes.MG_PassedPawn_StartIndex + 7).map(x => Math.round(x))}`);
         console.log(`EG Passed Pawn: ${weights.slice(indexes.EG_PassedPawn_StartIndex, indexes.EG_PassedPawn_StartIndex + 7).map(x => Math.round(x))}`);
+        console.log(`MG Bishop Pair: ${weights.slice(indexes.MG_BishopPair_StartIndex, indexes.MG_BishopPair_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`EG Bishop Pair: ${weights.slice(indexes.EG_BishopPair_StartIndex, indexes.EG_BishopPair_StartIndex + 1).map(x => Math.round(x))}`);
     }
 
     Evaluate(weights: number[], normals: Coefficient[]) {
@@ -209,6 +213,8 @@ export default class Tuner {
             EG_DoubledPawn_StartIndex: 0,
             MG_PassedPawn_StartIndex: 0,
             EG_PassedPawn_StartIndex: 0,
+            MG_BishopPair_StartIndex: 0,
+            EG_BishopPair_StartIndex: 0,
         };
     
         let index = 0;
@@ -260,6 +266,12 @@ export default class Tuner {
 
         indexes.EG_PassedPawn_StartIndex = weights.length;
         weights.splice(indexes.EG_PassedPawn_StartIndex, 0, ...this.Engine.EGPassedPawnRank);
+
+        indexes.MG_BishopPair_StartIndex = weights.length;
+        weights.splice(indexes.MG_BishopPair_StartIndex, 0, this.Engine.MGBishopPair);
+
+        indexes.EG_BishopPair_StartIndex = weights.length;
+        weights.splice(indexes.EG_BishopPair_StartIndex, 0, this.Engine.EGBishopPair);
     
         return { weights, indexes };
     }
@@ -327,6 +339,7 @@ export default class Tuner {
         const phase = ((this.Engine.BoardState.Phase * 256 + (this.Engine.PhaseTotal / 2)) / this.Engine.PhaseTotal) | 0;
         const mgPhase = (256 - phase) / 256;
         const egPhase = phase / 256;
+        const bishopCount = [0, 0];
 
         let allOccupancies = this.Engine.BoardState.OccupanciesBB[0] | this.Engine.BoardState.OccupanciesBB[1];
 
@@ -392,6 +405,10 @@ export default class Tuner {
                     }
                     break;
                 }
+                case PieceType.Bishop: {
+                    bishopCount[piece.Color]++;
+                    break;
+                }
                 case PieceType.Rook: {
                     // (SEMI-) OPEN FILE
                     // First condition checks for friendly pawns on the same file (semi-open file)
@@ -407,6 +424,16 @@ export default class Tuner {
                     break;
                 }
             }
+        }
+
+        if (bishopCount[Color.White] >= 2) {
+            rawNormals[indexes.MG_BishopPair_StartIndex] += mgPhase;
+            rawNormals[indexes.EG_BishopPair_StartIndex] += egPhase;
+        }
+
+        if (bishopCount[Color.Black] >= 2) {
+            rawNormals[indexes.MG_BishopPair_StartIndex] -= mgPhase;
+            rawNormals[indexes.EG_BishopPair_StartIndex] -= egPhase;
         }
 
         // Material coeffs

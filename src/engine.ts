@@ -1875,6 +1875,8 @@ class Khepri {
     readonly EGKnightOutpost = 12;
     readonly MGRookOpenFileBonus = 33;
     readonly MGRookSemiOpenFileBonus = 15;
+    readonly MGBishopPair = 8;
+    readonly EGBishopPair = 35;
     readonly PawnDuoMulti = [0, -5, 4, 18, 50, 58, 54];
     readonly PawnSupportMulti = [0, 0, 14, 11, 18, 22, 33];
     readonly MGDoubledPawn = 10;
@@ -1888,6 +1890,7 @@ class Khepri {
         let phase = this.BoardState.Phase;
         let occupied = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
         let pieces = occupied & ~(this.BoardState.PiecesBB[PieceType.Pawn] | this.BoardState.PiecesBB[PieceType.Pawn + 6]);
+        const bishopCount = [0, 0];
 
         // pawns are evaluated separately
         const pawnScore = this.EvaluatePawns();
@@ -1915,6 +1918,10 @@ class Khepri {
                     }
                     break;
                 }
+                case PieceType.Bishop: {
+                    bishopCount[piece.Color]++;
+                    break;
+                }
                 case PieceType.Rook: {
                     // (SEMI-) OPEN FILE
                     // First condition checks for friendly pawns on the same file (semi-open file)
@@ -1934,6 +1941,16 @@ class Khepri {
             // PST and material scores
             mg[piece.Color] += this.PST[0][piece.Type][square] + this.MGPieceValue[piece.Type];
             eg[piece.Color] += this.PST[1][piece.Type][square] + this.EGPieceValue[piece.Type];
+        }
+
+        if (bishopCount[Color.White] >= 2) {
+            mg[Color.White] += this.MGBishopPair;
+            eg[Color.White] += this.EGBishopPair;
+        }
+
+        if (bishopCount[Color.Black] >= 2) {
+            mg[Color.Black] += this.MGBishopPair;
+            eg[Color.Black] += this.EGBishopPair;
         }
 
         const opening = mg[this.BoardState.SideToMove] - mg[this.BoardState.SideToMove ^ 1] + pawnScore.opening;
