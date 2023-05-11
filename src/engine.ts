@@ -2203,6 +2203,14 @@ class Khepri {
             }
         }
 
+        // Mate distance pruning
+        alpha = Math.max(-this.INFINITY + this.BoardState.Ply, alpha);
+        beta = Math.min(this.INFINITY - this.BoardState.Ply, beta);
+
+        if (alpha >= beta) {
+            return alpha;
+        }
+
         const moves = this.ScoreMoves(this.GenerateMoves(), ttMove, previousMove);
 
         for (let i = 0; i < moves.length; i++) {
