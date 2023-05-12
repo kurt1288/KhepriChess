@@ -46,13 +46,13 @@ export default class Tuner {
     private readonly Epsilon = 0.00000001;
 
     /**
-     * 
+     *
      * @param epochs Number of epochs to run
      * @param numPositions Number of positions to test per epoch. "0" to test all positions loaded
      */
     Tune(epochs: number, numPositions: number) {
         const { weights, indexes } = this.LoadWeights();
-        
+
         const positions = this.LoadPositions(indexes, numPositions, weights.length);
 
         console.log("Tuning...");
@@ -64,31 +64,31 @@ export default class Tuner {
             etaBuffer: 1000,
         });
         progress.start(epochs, 0);
-    
+
         const gradientsSumsSquared = new Array(weights.length).fill(0);
         const beforeErr = this.ComputeMSE(positions, weights);
-    
+
         if (numPositions === 0) {
             numPositions = positions.length;
         }
-        
+
         let N = numPositions;
         let learningRate = this.LearningRate;
         const errors: number[] = [];
-    
+
         for (let epoch = 0; epoch < epochs; epoch++) {
             let gradients = this.ComputeGradient(positions, weights);
-    
+
             for (let [index, gradient] of gradients.entries()) {
                 const leadingCoefficent = (-2 * this.ScalingFactor) / N;
                 gradientsSumsSquared[index] += (leadingCoefficent * gradient) * (leadingCoefficent * gradient);
                 weights[index] += (leadingCoefficent * gradient) * (-learningRate / Math.sqrt(gradientsSumsSquared[index] + this.Epsilon));
             }
-    
+
             errors.push(this.ComputeMSE(positions, weights));
             progress.update(epoch + 1);
         }
-    
+
         progress.stop();
         const file = fs.createWriteStream("errors.txt");
         file.on("error", (err) => {
@@ -98,7 +98,7 @@ export default class Tuner {
             file.write(`${index}, ${value}\n`);
         }
         file.end();
-    
+
         console.log(`Best error before tuning: ${beforeErr}`);
         console.log(`Best error after tuning: ${this.ComputeMSE(positions, weights)}`);
         this.PrintResults(weights, indexes);
@@ -107,9 +107,9 @@ export default class Tuner {
     PrintResults(weights: number[], indexes: Indexes) {
         console.log(`MG Piece Values: ${weights.slice(indexes.MG_Material_StartIndex, indexes.MG_Material_StartIndex + 5).map(x => Math.round(x))}`);
         console.log(`EG Piece Values: ${weights.slice(indexes.EG_Material_StartIndex, indexes.EG_Material_StartIndex + 5).map(x => Math.round(x))}`);
-    
+
         const pieceNames = [ "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" ];
-    
+
         for (let piece = 0, index = 0; piece <= 5; piece++, index += 64) {
             console.log(`MG ${pieceNames[piece]} PST = `);
             console.log(`[`);
@@ -123,7 +123,7 @@ export default class Tuner {
             }
             console.log(`]`);
         }
-    
+
         for (let piece = 0, index = 0; piece <= 5; piece++, index += 64) {
             console.log(`EG ${pieceNames[piece]} PST = `);
             console.log(`[`);
@@ -154,45 +154,45 @@ export default class Tuner {
 
     Evaluate(weights: number[], normals: Coefficient[]) {
         let score = 0;
-    
+
         for (let i of normals) {
             score += weights[i.index] * i.value;
             if (isNaN(score)) {
                 throw new Error(`Invalid score returned: ${score}. i: ${i}`);
             }
         }
-    
+
         return score;
     }
 
     ComputeMSE(positions: Position[], weights: number[]) {
         let errorSum = 0;
-    
+
         for (let position of positions) {
             let score = this.Evaluate(weights, position.normals);
             let sigmoid = 1 / (1 + Math.exp(-(this.ScalingFactor * score)));
             let error = position.outcome - sigmoid;
             errorSum += Math.pow(error, 2);
         }
-    
+
         return errorSum / positions.length;
     }
 
     ComputeGradient(positions: Position[], weights: number[]) {
         const gradients: number[] = new Array(weights.length).fill(0);
-    
+
         for (let position of positions) {
             let score = this.Evaluate(weights, position.normals);
             let sigmoid = 1 / (1 + Math.exp(-(this.ScalingFactor * score)));
             let error = position.outcome - sigmoid;
-    
+
             let term = error * (1 - sigmoid) * sigmoid;
-    
+
             for (let normal of position.normals) {
                 gradients[normal.index] += term * normal.value;
             }
         }
-    
+
         return gradients;
     }
 
@@ -216,23 +216,23 @@ export default class Tuner {
             MG_BishopPair_StartIndex: 0,
             EG_BishopPair_StartIndex: 0,
         };
-    
+
         let index = 0;
-    
+
         for (let i = 0; i <= 5; i++) {
             weights.splice(index, 0, ...this.Engine.PST[0][i]);
             weights.splice(384 + index, 0, ...this.Engine.PST[1][i]);
             index += 64;
         }
-    
+
         index *= 2;
-    
+
         indexes.MG_Material_StartIndex = index;
         indexes.EG_Material_StartIndex = index + 5;
-    
+
         weights.splice(indexes.MG_Material_StartIndex, 0, ...this.Engine.MGPieceValue.slice(0, -1));
         weights.splice(indexes.EG_Material_StartIndex, 0, ...this.Engine.EGPieceValue.slice(0, -1));
-    
+
         index += 10;
 
         indexes.MG_KnightOutpost_StartIndex = index;
@@ -272,7 +272,7 @@ export default class Tuner {
 
         indexes.EG_BishopPair_StartIndex = weights.length;
         weights.splice(indexes.EG_BishopPair_StartIndex, 0, this.Engine.EGBishopPair);
-    
+
         return { weights, indexes };
     }
 
@@ -289,47 +289,47 @@ export default class Tuner {
             hideCursor: true,
             etaBuffer: 1000,
         });
-    
+
         try {
             const data = fs.readFileSync(path.join(__dirname, "./positions.txt"), "utf8");
             const lines = data.split("\n");
-    
+
             if (numPositions === 0) {
                 numPositions = lines.length;
             }
 
             progress.start(numPositions, 0);
-            
+
             for (let i = 0; i < numPositions; i++) {
                 const line = lines[i];
                 const fen = line.split("\"")[0];
                 const value = (line.match(reg) as RegExpMatchArray)[1];
                 let result = Outcome.Draw;
-    
+
                 if (value === "0-1") {
                     result = Outcome.BlackWin;
                 }
                 else if (value === "1-0") {
                     result = Outcome.WhiteWin;
                 }
-    
+
                 this.Engine.LoadFEN(fen);
-    
+
                 const coefficients = this.GetCoefficients(indexes, weightsLength);
-    
+
                 const phase = ((this.Engine.BoardState.Phase * 256 + (this.Engine.PhaseTotal / 2)) / this.Engine.PhaseTotal) | 0;
                 const mgPhase = (256-phase) / 256;
-    
+
                 progress.update(i + 1);
                 positions.push({ normals: coefficients, outcome: result, MGPhase: mgPhase });
             }
-    
+
             progress.stop();
         }
         catch (error) {
             console.log(error);
         }
-    
+
         return positions;
     }
 
@@ -351,13 +351,13 @@ export default class Tuner {
             const rank = piece.Color === Color.White ? 8 - (square >> 3) : 1 + (square >> 3);
             const up = piece.Color === Color.White ? Direction.NORTH : Direction.SOUTH;
             let sign = 1;
-    
+
             // Because the PST are from white's perspective, we have to flip the square if the piece is black's
             if (piece.Color === 1) {
                 square ^= 56;
                 sign = -1;
             }
-    
+
             // PST coefficients
             const mgIndex = (piece.Type * 64) + square;
             const egIndex = indexes.EG_PSQT_StartIndex + mgIndex;
@@ -490,7 +490,7 @@ class Quiescer {
 
         for (let i = 0; i < moves.length; i++) {
             const move = this.Engine.NextMove(moves, i).move;
-            
+
             if (!this.Engine.MakeMove(move)) {
                 this.Engine.UnmakeMove(move);
                 continue;
@@ -565,7 +565,7 @@ class Game {
     GetSANMove(sanmove: string, line: string) {
         // Check or checkmate symbol aren't required
         if (sanmove.endsWith("+") || sanmove.endsWith("#")) {
-            sanmove = sanmove.slice(0, -1); 
+            sanmove = sanmove.slice(0, -1);
         }
 
         if (sanmove === "O-O") {
@@ -644,10 +644,10 @@ class Game {
                         continue;
                     }
                     this.Engine.UnmakeMove(move);
-                    
+
                     return move;
                 }
-                
+
                 if (!this.Engine.MakeMove(move)) {
                     this.Engine.UnmakeMove(move);
                     continue;
@@ -700,13 +700,19 @@ class Game {
             }
 
             const sanTo = this.CoordsToSquare(sanmove.substring(sanmove.length - 2));
-            
+
             if (sanTo !== to) {
                 continue;
             }
 
-            // move has disambiguation (e.g. Rad1 or R7a4)
+            // move has disambiguation (e.g. Rad1 or R7a4 or Rd1d2)
             if (sanmove.length > 3) {
+                if (sanmove.length > 4) {
+                    if (moveString.charAt(0) !== sanmove.charAt(1) || moveString.charAt(1) !== sanmove.charAt(2)) {
+                        continue;
+                    }
+                }
+
                 // disambiguator is a letter (file)
                 if (isNaN(+sanmove.charAt(1))) {
                     if (moveString.charAt(0) !== sanmove.charAt(1)) {
@@ -927,7 +933,7 @@ class PGNParser {
                 const stop = line.indexOf("]");
                 let result = line.substring(14, stop - 1);
 
-                if (result === "illegal move") {
+                if (result === "illegal move" || result === "unterminated") {
                     skipGame = true;
                 }
             }
