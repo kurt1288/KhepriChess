@@ -2235,7 +2235,7 @@ class Khepri {
 
             if (!isPVNode && !inCheck && !this.IsCapture(move) && !this.IsPromotion(move)) {
                 // futility pruning
-                if (depth <= 10 && legalMoves > 0 && staticEval + 35 * depth < alpha) {
+                if (depth <= 10 && legalMoves > 0 && staticEval + 35 * depth * depth < alpha) {
                     continue;
                 }
 
