@@ -1884,6 +1884,28 @@ class Khepri {
     readonly MGPassedPawnRank = [0, 3, -11, -18, 6, 13, 16];
     readonly EGPassedPawnRank = [0, 1, 15,  41, 63, 92, 72];
 
+    readonly CenterDistance = [
+        3, 3, 3, 3, 3, 3, 3, 3,
+        3, 2, 2, 2, 2, 2, 2, 3,
+        3, 2, 1, 1, 1, 1, 2, 3,
+        3, 2, 1, 0, 0, 1, 2, 3,
+        3, 2, 1, 0, 0, 1, 2, 3,
+        3, 2, 1, 1, 1, 1, 2, 3,
+        3, 2, 2, 2, 2, 2, 2, 3,
+        3, 3, 3, 3, 3, 3, 3, 3,
+    ];
+
+    readonly CenterManhattanDistance = [
+        6, 5, 4, 3, 3, 4, 5, 6,
+        5, 4, 3, 2, 2, 3, 4, 5,
+        4, 3, 2, 1, 1, 2, 3, 4,
+        3, 2, 1, 0, 0, 1, 2, 3,
+        3, 2, 1, 0, 0, 1, 2, 3,
+        4, 3, 2, 1, 1, 2, 3, 4,
+        5, 4, 3, 2, 2, 3, 4, 5,
+        6, 5, 4, 3, 3, 4, 5, 6,
+    ];
+
     Evaluate() {
         let mg = [0, 0];
         let eg = [0, 0];
@@ -1891,6 +1913,45 @@ class Khepri {
         let occupied = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
         let pieces = occupied & ~(this.BoardState.PiecesBB[PieceType.Pawn] | this.BoardState.PiecesBB[PieceType.Pawn + 6]);
         const bishopCount = [0, 0];
+
+        // If there are no more pawns left on the board, try to force weaker king to corner
+        if ((this.BoardState.PiecesBB[PieceType.Pawn] | this.BoardState.PiecesBB[PieceType.Pawn + 6]) === 0n) {
+            if (this.IsDraw()) {
+                return 0;
+            }
+
+            let kingSquares = [Square.no_sq, Square.no_sq];
+
+            while (pieces) {
+                let square = this.GetLS1B(pieces);
+                pieces = this.RemoveBit(pieces, square);
+                const piece = this.BoardState.Squares[square] as Piece;
+
+                eg[piece.Color] += this.EGPieceValue[piece.Type];
+
+                if (piece.Type === PieceType.King) {
+                    kingSquares[piece.Color] = square;
+                }
+            }
+
+            const distance = this.distanceBetween[kingSquares[Color.White]][kingSquares[Color.Black]];
+
+            // Which side is weaker (with a margin)?
+            if (Math.abs(eg[Color.White] - eg[Color.Black]) > 10) {
+                if (eg[Color.White] > eg[Color.Black]) {
+                    eg[Color.Black] -= this.CenterManhattanDistance[kingSquares[Color.Black]] * 50;
+                }
+                else {
+                    eg[Color.White] -= this.CenterManhattanDistance[kingSquares[Color.White]] * 50;
+                }
+            }
+            else {
+                // if the material value is similar, consider it a draw
+                return 0;
+            }
+
+            return eg[this.BoardState.SideToMove] - eg[this.BoardState.SideToMove ^ 1] - (35 * (7 - distance));
+        }
 
         // pawns are evaluated separately
         const pawnScore = this.EvaluatePawns();
@@ -2029,6 +2090,44 @@ class Khepri {
         this.StorePawnHash(this.BoardState.PawnHash, opening, endgame, this.BoardState.SideToMove);
 
         return { opening, endgame };
+    }
+
+    IsDraw() {
+        // Only kings
+        if ((this.BoardState.PiecesBB[PieceType.King] | this.BoardState.PiecesBB[PieceType.King + 6]) === (this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black])) {
+            return true;
+        }
+
+        const pawns = this.CountBits(this.BoardState.PiecesBB[PieceType.Pawn]) + this.CountBits(this.BoardState.PiecesBB[PieceType.Pawn + 6]);
+        const wKnights = this.CountBits(this.BoardState.PiecesBB[PieceType.Knight]);
+        const bKnights = this.CountBits(this.BoardState.PiecesBB[PieceType.Knight + 6]);
+        const wBishops = this.CountBits(this.BoardState.PiecesBB[PieceType.Bishop]);
+        const bBishops = this.CountBits(this.BoardState.PiecesBB[PieceType.Bishop + 6]);
+        const rooks = this.CountBits(this.BoardState.PiecesBB[PieceType.Rook]) + this.CountBits(this.BoardState.PiecesBB[PieceType.Rook + 6]);
+        const queens = this.CountBits(this.BoardState.PiecesBB[PieceType.Queen]) + this.CountBits(this.BoardState.PiecesBB[PieceType.Queen + 6]);
+
+        const minors = wKnights + bKnights + wBishops + bBishops;
+
+        if (rooks + queens + pawns === 0) {
+            if (minors === 1) {
+                // K + minor vs K;
+                return true;
+            }
+
+            if (minors === 2) {
+                if (wKnights === 1 && bKnights === 1) {
+                    // KN vs KN
+                    return true;
+                }
+
+                if (wBishops === 1 && bBishops === 1) {
+                    // KB vs KB
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /****************************
@@ -2204,7 +2303,8 @@ class Khepri {
         }
 
         // Null move pruning
-        if (!inCheck && !isPVNode && nullAllowed && depth >= 2 && staticEval >= beta) {
+        // Don't prune if there are only kings and pawns left
+        if (!inCheck && !isPVNode && nullAllowed && staticEval >= beta
             this.MakeNullMove();
 
             const R = 3 + Math.floor(depth / 5);
