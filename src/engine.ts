@@ -2305,6 +2305,7 @@ class Khepri {
         // Null move pruning
         // Don't prune if there are only kings and pawns left
         if (!inCheck && !isPVNode && nullAllowed && staticEval >= beta
+            && (this.BoardState.OccupanciesBB[this.BoardState.SideToMove] ^ this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)] ^ this.BoardState.PiecesBB[PieceType.Pawn + (6 * this.BoardState.SideToMove)]) !== 0n) {
             this.MakeNullMove();
 
             const R = 3 + Math.floor(depth / 5);
