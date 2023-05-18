@@ -40,7 +40,7 @@ class UciInterface {
             case "ucinewgame": {
                this.engine = new Khepri();
                this.engine.isChess960 = this.options.isChess960;
-               this.engine.SetTransTableSize(this.options.hashSize);
+               this.engine.ResizeTranspositionTable(this.options.hashSize);
 
                const polyglot = new Polyglot();
                const entries = polyglot.TryLoad();
@@ -57,7 +57,7 @@ class UciInterface {
             }
             case "go": {
                if (this.openingBook) {
-                  const hash = Polyglot.PolyglotHash(this.engine.Position);
+                  const hash = Polyglot.PolyglotHash(this.engine.BoardState);
                   const openings = this.openingBook.get(hash);
 
                   if (openings !== undefined) {
@@ -83,7 +83,7 @@ class UciInterface {
                         const hash = parseInt((message.match(/value (\d+)/) || [])[1]) || 0;
                         if (hash) {
                            this.options.hashSize = hash;
-                           this.engine.SetTransTableSize(hash);
+                           this.engine.ResizeTranspositionTable(hash);
                         }
                         break;
                      }

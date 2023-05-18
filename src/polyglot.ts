@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import Engine, { CastlingRights, Color, IPosition, Square } from "./engine";
+import Engine, { CastlingRights, Color, BoardState, Square } from "./engine";
 
 export interface entry {
     move: string
@@ -77,7 +77,7 @@ export default class Polyglot {
 		return this._entries;
 	}
 
-    static PolyglotHash(position: IPosition) {
+    static PolyglotHash(position: BoardState) {
         let hash: bigint = 0n;
 
         for (let [index, piece] of position.Squares.entries()) {
@@ -136,7 +136,7 @@ export default class Polyglot {
 
         for (let position of testPositions) {
             engine.LoadFEN(position.fen);
-            const hash = Polyglot.PolyglotHash(engine.Position);
+            const hash = Polyglot.PolyglotHash(engine.BoardState);
 
             console.assert(hash === position.hash, `Polyglot hash for position ${position.fen} is incorrect! Generated ${hash} instead of ${position.hash}`);
         }
