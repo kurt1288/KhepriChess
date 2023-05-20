@@ -1344,13 +1344,14 @@ class Khepri {
             rookTo = Square.d1 ^ (piece.Color * 56);
         }
         const rookFrom = to;
+        
+        // Remove the king and rook
+        this.RemovePiece(PieceType.Rook, piece.Color, rookFrom);
+        this.RemovePiece(piece.Type, piece.Color, from);
 
-        // Move the king
-        this.MovePiece(piece, from, kingTo);
-
-        // Move the rook
-        const rookPiece = this.BoardState.Squares[rookFrom] as Piece;
-        this.MovePiece(rookPiece, rookFrom, rookTo);
+        // Place the king and rook on their squares
+        this.PlacePiece(PieceType.Rook, piece.Color, rookTo);
+        this.PlacePiece(piece.Type, piece.Color, kingTo);
 
         this.BoardState.Hash ^= this.Zobrist.Pieces[piece.Color][PieceType.Rook][rookFrom] ^ this.Zobrist.Pieces[piece.Color][PieceType.Rook][rookTo]
             ^ this.Zobrist.Pieces[piece.Color][PieceType.King][kingTo] ^ this.Zobrist.Pieces[piece.Color][PieceType.King][from];
@@ -1368,11 +1369,10 @@ class Khepri {
         }
         const rookFrom = to;
 
-        const kingPiece = this.BoardState.Squares[kingTo] as Piece;
-        const rookPiece = this.BoardState.Squares[rookTo] as Piece;
-
-        this.MovePiece(kingPiece, kingTo, from);
-        this.MovePiece(rookPiece, rookTo, rookFrom);
+        this.RemovePiece(PieceType.Rook, color, rookTo);
+        this.RemovePiece(PieceType.King, color, kingTo);
+        this.PlacePiece(PieceType.Rook, color, rookFrom);
+        this.PlacePiece(PieceType.King, color, from);
     }
 
     /**
