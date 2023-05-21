@@ -2290,42 +2290,46 @@ class Khepri {
             ttMove = entry.Move;
         }
 
-        const staticEval = this.Evaluate();
+        let staticEval = -this.INFINITY;
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)]), this.BoardState.SideToMove ^ 1);
 
         if (ttMove === 0 && depth >= 3) {
             depth = depth - 1;
         }
 
-        // Razoring
-        if (staticEval + 300 * depth * depth < alpha) {
-            const score = this.Quiescence(alpha - 1, alpha, previousMove);
-            if (score < alpha) {
-                return score;
-            }
-        }
+        if (!inCheck && !isPVNode && this.BoardState.Ply > 0) {
+            staticEval = this.Evaluate();
 
-        // Static null move pruning (reverse futility pruning)
-        if (!inCheck && !isPVNode && depth <= 5 && staticEval - 60 * depth >= beta && Math.abs(staticEval) < (this.INFINITY - this.BoardState.Ply)) {
-            return staticEval;
-        }
-
-        // Null move pruning
-        // Don't prune if there are only kings and pawns left
-        if (!inCheck && !isPVNode && nullAllowed && staticEval >= beta
-            && (this.BoardState.OccupanciesBB[this.BoardState.SideToMove] ^ this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)] ^ this.BoardState.PiecesBB[PieceType.Pawn + (6 * this.BoardState.SideToMove)]) !== 0n) {
-            this.MakeNullMove();
-
-            const R = 3 + Math.floor(depth / 5);
-            let score = -this.NegaScout(-beta, -beta + 1, depth - 1 - R, 0, false);
-
-            this.UnmakeNullMove();
-
-            if (score >= beta) {
-                if (Math.abs(score) > (this.INFINITY - this.BoardState.Ply)) {
-                    return beta;
+            // Razoring
+            if (staticEval + 300 * depth * depth < alpha) {
+                const score = this.Quiescence(alpha - 1, alpha, previousMove);
+                if (score < alpha) {
+                    return score;
                 }
-                return score;
+            }
+
+            // Static null move pruning (reverse futility pruning)
+            if (depth <= 5 && staticEval - 60 * depth >= beta && Math.abs(staticEval) < (this.INFINITY - this.BoardState.Ply)) {
+                return staticEval;
+            }
+
+            // Null move pruning
+            // Don't prune if there are only kings and pawns left
+            if (nullAllowed && staticEval >= beta
+                && (this.BoardState.OccupanciesBB[this.BoardState.SideToMove] ^ this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)] ^ this.BoardState.PiecesBB[PieceType.Pawn + (6 * this.BoardState.SideToMove)]) !== 0n) {
+                this.MakeNullMove();
+
+                const R = 3 + Math.floor(depth / 5);
+                let score = -this.NegaScout(-beta, -beta + 1, depth - 1 - R, 0, false);
+
+                this.UnmakeNullMove();
+
+                if (score >= beta) {
+                    if (Math.abs(score) > (this.INFINITY - this.BoardState.Ply)) {
+                        return beta;
+                    }
+                    return score;
+                }
             }
         }
 
