@@ -2297,6 +2297,14 @@ class Khepri {
             depth = depth - 1;
         }
 
+        // Razoring
+        if (staticEval + 300 * depth * depth < alpha) {
+            const score = this.Quiescence(alpha - 1, alpha, previousMove);
+            if (score < alpha) {
+                return score;
+            }
+        }
+
         // Static null move pruning (reverse futility pruning)
         if (!inCheck && !isPVNode && depth <= 5 && staticEval - 60 * depth >= beta && Math.abs(staticEval) < (this.INFINITY - this.BoardState.Ply)) {
             return staticEval;
