@@ -2345,7 +2345,7 @@ class Khepri {
                 }
 
                 // late move pruning
-                if (depth <= 2 && legalMoves > 7 * depth) {
+                if (depth <= 4 && legalMoves > 8 * depth) {
                     continue;
                 }
             }
