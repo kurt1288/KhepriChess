@@ -2369,6 +2369,7 @@ class Khepri {
 
                 R = Math.max(0, R);
 
+                // Reduced-depth search
                 score = -this.NegaScout(-alpha - 1, -alpha, depth - 1 - R + E, move, true);
 
                 // if the reduced-depth search fails low, skip the move
@@ -2378,10 +2379,10 @@ class Khepri {
                 }
             }
 
-            // reduced window search, if not doing LMR or if LMR did not fail low
+            // normal search, if not doing LMR or if LMR did not fail low
             score = -this.NegaScout(-b, -alpha, depth - 1 + E, move, true);
 
-            if ((score > alpha) && (score < beta) && (i > 1)) {
+            if (score > alpha && score < beta && i > 1) {
                 score = -this.NegaScout(-beta, -alpha, depth - 1 + E, move, true); /* re-search with wider window */
             }
 
