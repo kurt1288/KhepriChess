@@ -1,11 +1,14 @@
 {
   "name": "kheprichess",
-  "version": "3.1.0",
+  "version": "4.0.0",
+  "license": "gplv3",
   "scripts": {
     "start": "webpack serve --config-name devConfig",
-    "build": "webpack --config-name browserConfig --config-name uciConfig",
+    "build": "npm run webpack && npm run package",
     "test": "jest",
-    "tune": "webpack --config-name tuneConfig"
+    "tune": "webpack --config-name tuneConfig",
+    "webpack": "webpack --config-name browserConfig --config-name uciConfig",
+    "package": "pkg --no-bytecode --public-packages \"*\" --public ./dist/kheprichess_uci-%npm_package_version%.js --out-path ./dist "
   },
   "devDependencies": {
     "@babel/preset-env": "^7.18.9",
@@ -13,6 +16,7 @@
     "@types/cli-progress": "^3.11.0",
     "@types/jest": "^27.4.0",
     "jest": "^27.4.7",
+    "pkg": "^5.8.1",
     "ts-loader": "^9.2.7",
     "typescript": "^4.8.4",
     "webpack": "^5.69.1",
