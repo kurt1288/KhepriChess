@@ -755,7 +755,7 @@ class Game {
 }
 
 class PGNParser {
-    private readonly NumPositionsPerGame = 4;
+    private readonly NumPositionsPerGame = 5;
     private readonly MinGameLength = 15;
     private SourceFile!: readline.Interface;
     private ResultFile = fs.createWriteStream(path.join(__dirname, "positions.txt"), 'utf-8');
@@ -808,9 +808,9 @@ class PGNParser {
             // random position (no position within the first 5 moves)
             const rand = Math.floor(Math.random() * ((positions.length - 1) - 3 + 1) + 3);
 
-            // Don't use a position that's within 4 plys of another position (within the same game)
+            // Don't use a position that's within 6 plys of another position (within the same game)
             for (let random of previousRandoms) {
-                if (rand >= random - 4 && rand <= random + 4) {
+                if (rand >= random - 6 && rand <= random + 6) {
                     attempts++;
                     continue;
                 }
@@ -954,7 +954,15 @@ class PGNParser {
     }
 }
 
-// const tuner = new PGNParser();
-// tuner.ParseFile("tuning.pgn");
-const tuner = new Tuner();
-tuner.Tune(30000, 0);
+const args = process.argv.slice(2);
+if (args[0] === "parse") {
+    const tuner = new PGNParser();
+    tuner.ParseFile(args[1]);
+}
+else if (args[0] === "tune") {
+    const tuner = new Tuner();
+    tuner.Tune(parseInt(args[1]), 0);
+}
+else {
+    console.log("Argument 'parse <pgn filename>' or 'tune <number of epochs>' required");
+}
