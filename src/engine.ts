@@ -1885,6 +1885,8 @@ class Khepri {
     readonly EGIsolatedPawn = 0;
     readonly MGPassedPawnRank = [0, 7, -3, -17, 8, 26, 70];
     readonly EGPassedPawnRank = [0, -2, 10, 43, 64, 82, 90];
+    readonly MGCorneredBishopPenalty = 3;
+    readonly EGCorneredBishopPenalty = 55;
 
     readonly CenterDistance = [
         3, 3, 3, 3, 3, 3, 3, 3,
@@ -1983,6 +1985,21 @@ class Khepri {
                 }
                 case PieceType.Bishop: {
                     bishopCount[piece.Color]++;
+
+                    // An idea from Stockfish - If the bishop is on a corner square and blocked diagonally by a friendly pawn it deserves a penalty
+                    if (this.isChess960 && (square === Square.a1 || square === Square.h1)) {
+                        let blockingPawn = (square & 7) === 0 ? (1n << 49n) : (1n << 54n);
+
+                        if (piece.Color === Color.Black) {
+                            blockingPawn = blockingPawn >> 40n;
+                        }
+
+                        if ((blockingPawn & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) !== 0n) {
+                            mg[piece.Color] -= this.MGCorneredBishopPenalty;
+                            eg[piece.Color] -= this.EGCorneredBishopPenalty;
+                        }
+                    }
+
                     break;
                 }
                 case PieceType.Rook: {
