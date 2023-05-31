@@ -2966,27 +2966,23 @@ class Khepri {
             return;
         }
 
-        // If there are moves left until the next time control, diving the remaining time equally
+        // If there are X moves left before the next time control
         if (this.Timer.movestogo !== 0) {
-            searchTime = this.Timer.timeleft / this.Timer.movestogo;
+            const movesLeft = Math.min(Math.max(this.Timer.movestogo, 2), 30);
+            searchTime = this.Timer.timeleft / movesLeft;
         }
+        // If told to search for a specific time
         else if (this.Timer.movetime !== -1) {
             searchTime = this.Timer.movetime;
         }
         else {
-            // Games, on average, take approximately 40 moves to complete
-            let movesleft = 0;
+            let movesLeft = 25;
             if (this.BoardState.Ply <= 20) {
-                movesleft = 45 - this.BoardState.Ply;
-            }
-            else {
-                movesleft = 25;
+                movesLeft = 45 - this.BoardState.Ply;
             }
 
-            searchTime = this.Timer.timeleft / movesleft;
+            searchTime = (this.Timer.timeleft / movesLeft) + (this.Timer.increment / 2);
         }
-
-        searchTime += this.Timer.increment / 2;
 
         if (searchTime >= this.Timer.timeleft) {
             searchTime -= this.Timer.increment;
@@ -3007,6 +3003,7 @@ class Khepri {
         }
 
         if (Date.now() > this.Timer.stopTime) {
+            // If time limit has been exceeded and search was done to a set time limit...
             if (this.Timer.movetime !== -1) {
                 this.Timer.stop = true;
                 return;
