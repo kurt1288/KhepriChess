@@ -1881,6 +1881,8 @@ class Khepri {
     readonly PawnSupportMulti = [0, 0, 22, 17, 25, 43, 31];
     readonly MGDoubledPawn = 17;
     readonly EGDoubledPawn = 17;
+    readonly MGIsolatedPawn = 9;
+    readonly EGIsolatedPawn = 0;
     readonly MGPassedPawnRank = [0, 7, -3, -17, 8, 26, 70];
     readonly EGPassedPawnRank = [0, -2, 10, 43, 64, 82, 90];
 
@@ -2077,6 +2079,12 @@ class Khepri {
             if ((this.Fill(up * -1, actualSquare) & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) === 0n && (this.passedMasks[piece.Color][square] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * (piece.Color ^ 1))]) === 0n) {
                 mg[piece.Color] += this.MGPassedPawnRank[rank - 1];
                 eg[piece.Color] += this.EGPassedPawnRank[rank - 1];
+            }
+
+            // isolated pawn
+            if ((this.isolatedMasks[actualSquare] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) === 0n) {
+                mg[piece.Color] -= this.MGIsolatedPawn;
+                eg[piece.Color] -= this.EGIsolatedPawn;
             }
 
             // PST and material scores

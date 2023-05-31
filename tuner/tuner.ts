@@ -20,6 +20,8 @@ interface Indexes {
     EG_PassedPawn_StartIndex: number;
     MG_BishopPair_StartIndex: number;
     EG_BishopPair_StartIndex: number;
+    MG_IsolatedPawn_StartIndex: number;
+    EG_IsolatedPawn_StartIndex: number;
 }
 
 enum Outcome {
@@ -150,6 +152,8 @@ export default class Tuner {
         console.log(`EG Passed Pawn: ${weights.slice(indexes.EG_PassedPawn_StartIndex, indexes.EG_PassedPawn_StartIndex + 7).map(x => Math.round(x))}`);
         console.log(`MG Bishop Pair: ${weights.slice(indexes.MG_BishopPair_StartIndex, indexes.MG_BishopPair_StartIndex + 1).map(x => Math.round(x))}`);
         console.log(`EG Bishop Pair: ${weights.slice(indexes.EG_BishopPair_StartIndex, indexes.EG_BishopPair_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`MG Isolated Pawn: ${weights.slice(indexes.MG_IsolatedPawn_StartIndex, indexes.MG_IsolatedPawn_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`EG Isolated Pawn: ${weights.slice(indexes.EG_IsolatedPawn_StartIndex, indexes.EG_IsolatedPawn_StartIndex + 1).map(x => Math.round(x))}`);
     }
 
     Evaluate(weights: number[], normals: Coefficient[]) {
@@ -215,6 +219,8 @@ export default class Tuner {
             EG_PassedPawn_StartIndex: 0,
             MG_BishopPair_StartIndex: 0,
             EG_BishopPair_StartIndex: 0,
+            MG_IsolatedPawn_StartIndex: 0,
+            EG_IsolatedPawn_StartIndex: 0,
         };
 
         let index = 0;
@@ -272,6 +278,12 @@ export default class Tuner {
 
         indexes.EG_BishopPair_StartIndex = weights.length;
         weights.splice(indexes.EG_BishopPair_StartIndex, 0, this.Engine.EGBishopPair);
+
+        indexes.MG_IsolatedPawn_StartIndex = weights.length;
+        weights.splice(indexes.MG_IsolatedPawn_StartIndex, 0, this.Engine.MGIsolatedPawn);
+
+        indexes.EG_IsolatedPawn_StartIndex = weights.length;
+        weights.splice(indexes.EG_IsolatedPawn_StartIndex, 0, this.Engine.EGIsolatedPawn);
 
         return { weights, indexes };
     }
@@ -390,6 +402,12 @@ export default class Tuner {
                     if ((this.Engine.Fill(up * -1, actualSquare) & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) === 0n && (this.Engine.passedMasks[piece.Color][square] & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * (piece.Color ^ 1))]) === 0n) {
                         rawNormals[indexes.MG_PassedPawn_StartIndex + (rank - 1)] += sign * mgPhase;
                         rawNormals[indexes.EG_PassedPawn_StartIndex + (rank - 1)] += sign * egPhase;
+                    }
+
+                    // isolated pawns
+                    if ((this.Engine.isolatedMasks[actualSquare] & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) === 0n) {
+                        rawNormals[indexes.MG_IsolatedPawn_StartIndex] -= sign * mgPhase;
+                        rawNormals[indexes.EG_IsolatedPawn_StartIndex] -= sign * egPhase;
                     }
 
                     break;
