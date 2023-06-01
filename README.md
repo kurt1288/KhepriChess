@@ -1,9 +1,9 @@
 # KhepriChess 𓆣
 
 <div align="center">
-![GitHub](https://img.shields.io/github/license/kurt1288/KhepriChess?style=for-the-badge)
-![GitHub all releases](https://img.shields.io/github/downloads/kurt1288/KhepriChess/total?style=for-the-badge)
-![GitHub package.json version](https://img.shields.io/github/package-json/v/kurt1288/KhepriChess?style=for-the-badge)
+    <img src="https://img.shields.io/github/license/kurt1288/KhepriChess?style=for-the-badge">
+    <img src="https://img.shields.io/github/downloads/kurt1288/KhepriChess/total?style=for-the-badge">
+    <img src="https://img.shields.io/github/package-json/v/kurt1288/KhepriChess?style=for-the-badge">
 </div>
 
 KhepriChess is a chess engine written in TypeScript (JavaScript).
