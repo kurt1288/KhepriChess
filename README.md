@@ -1,19 +1,37 @@
 # KhepriChess 𓆣
 
-KhepriChess is a JavaScript (written in TypeScript) chess engine. It uses native 64-bit integers for bitboard representation.
+<div align="center">
+![GitHub](https://img.shields.io/github/license/kurt1288/KhepriChess?style=for-the-badge)
+![GitHub all releases](https://img.shields.io/github/downloads/kurt1288/KhepriChess/total?style=for-the-badge)
+![GitHub package.json version](https://img.shields.io/github/package-json/v/kurt1288/KhepriChess?style=for-the-badge)
+</div>
 
-### Play against KhepriChess!
+KhepriChess is a chess engine written in TypeScript (JavaScript).
+
+For instructions on using KhepriChess, see the [Usage](#usage) section below.
+
+## About
+
+Why a chess engine in JavaScript? My goal here is simply to see what JS can do and learn something about chess engine programming along the way. And I wanted to try something that hadn't been done in a JS chess engine...
+
+### Board Representation
+
+Unlike other JS chess engines, KhepriChess uses 64-bit bitboards for board representation. Prior to the introduction of `BigInt`, JS was unable to represent *integers* larger than 32-bits. For chess bitboards, this meant having to use two 32-bit boards: one for the upper 32-bits and one for the lower 32-bits.
+
+There is a trade-off, though, to using `BigInt`. While it makes various aspects of programming a chess engine easier, the way BigInts are implemented in JS make them *extremely* slow (compared to regular Numbers). More on this can be found in [this](https://v8.dev/blog/bigint#representing-bigints-in-memory) V8 blog post.
+
+## Play against KhepriChess!
 [Browser example](https://kurt1288.github.io/KhepriChess/examples/khepri.html)
 
 [Lichess](https://lichess.org/@/KhepriChess)
 
 ## Usage
 
-KhepriChess can be used in both a browser or with a GUI the can run UCI engines. **Please make sure you use the appropriately named file.**
+KhepriChess is only an engine and does not provide any sort of UI. For that, you can use it in a browser or a UCI-compatible GUI. A `.js` file provided for browsers and prebuilt binaries for Windows, Linux, and Mac.
 
 ### Browsers
 
-Use the `kheprichess_browser.js" file. Add the file to your HTML page like you would any other JS file, either
+KhepriChess can be added with:
 
 ```js
 <script src="kheprichess_browser.js" />
@@ -27,15 +45,11 @@ For a more in-depth example of using it in the browser, please see the [the exam
 
 ### UCI
 
-Use "kheprichess_uci.js" in UCI-compatible applications.
+Follow the instructions for the particular GUI program on adding a new engine. Some free programs are:
 
-Nodejs is required. Please download the latest version (or the LTS version) [here](https://nodejs.org/en/).
-
-Once node is installed, you can add KhepriChess to a GUI program, like Arena or Cute Chess.
-
-* In [Arena](http://www.playwitharena.de/), the command line should be the path to the nodejs executable. In the "Command Line Parameters" field, specify the path to the kheprichess_uci.js file.
-
-* In [Cute Chess](https://cutechess.com/), the command field should look something like `<Nodejs directory>\node.exe "<Khepri directory>\kheprichess_uci.js"`.
+* [Cute Chess](https://cutechess.com/)
+* [Banksia GUI](https://banksiagui.com/)
+* [Arena](http://www.playwitharena.de/)
 
 ## Chess960
 
