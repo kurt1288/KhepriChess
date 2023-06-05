@@ -312,7 +312,7 @@ class Khepri {
         this.BoardState.CastlingRookSquares = [],
         this.BoardState.CastlingSquaresMask = new Array(64).fill(15);
 
-        this.TranspositionTables = Array((32 * 1024 * 1024) / 16).fill(null);
+        this.ResizeTranspositionTable(32);
         this.TTSize = BigInt((32 * 1024 * 1024) / 16);
         this.TTUsed = 0;
 
@@ -1633,17 +1633,33 @@ class Khepri {
      ****************************/
 
     // Default to a 32 MB hash table. Calculate how many 16-byte entries can fit
-    TranspositionTables: (TTEntry | null)[] = Array((32 * 1024 * 1024) / 16).fill(null);
-    TTSize = BigInt((32 * 1024 * 1024) / 16); // as bigint for faster/easier operations against hashes
-    TTUsed = 0;
+    private TT_Size = (32 * 1024 * 1024) / 16;
+
+    /** Why a bunch of arrays (instead of a single array of entry objects)?
+     * Due to how JS stores objects, a 16-byte object takes up more than 16-bytes of memory.
+     * For large hash table sizes, this results in a large amount of memory being used (> 1GB).
+     * This way has much better memory usage.
+     **/
+    private TT_Hash = new BigUint64Array(this.TT_Size);
+    private TT_Depth = new Uint8Array(this.TT_Size);
+    private TT_Move = new Uint16Array(this.TT_Size);
+    private TT_Score = new Int16Array(this.TT_Size);
+    private TT_Flag = new Uint8Array(this.TT_Size);
+    private TTSize = BigInt((32 * 1024 * 1024) / 16); // as bigint for faster/easier operations against hashes
+    private TTUsed = 0;
 
     /**
      * Resize the transposition table to the provided size
      * @param size The size, in MB, to set the hash table to
      */
     ResizeTranspositionTable(size: number) {
-        this.TranspositionTables = Array((size * 1024 * 1024) / 16).fill(null);
-        this.TTSize = BigInt((size * 1024 * 1024) / 16);
+        this.TT_Size = (size * 1024 * 1024) / 16;
+        this.TT_Hash = new BigUint64Array(this.TT_Size);
+        this.TT_Depth = new Uint8Array(this.TT_Size);
+        this.TT_Move = new Uint16Array(this.TT_Size);
+        this.TT_Score = new Int16Array(this.TT_Size);
+        this.TT_Flag = new Uint8Array(this.TT_Size);
+        this.TTSize = BigInt(this.TT_Size);
         this.TTUsed = 0;
     }
 
@@ -1652,18 +1668,16 @@ class Khepri {
      */
     StoreEntry(hash: bigint, depth: number, move: number, score: number, flag: HashFlag) {
         const index = Number(hash % this.TTSize);
-        
-        if (this.TranspositionTables[index] === null) {
+
+        if (this.TT_Hash[index] === 0n) {
             this.TTUsed++;
         }
-        
-        this.TranspositionTables[index] = {
-            Hash: hash,
-            Move: move,
-            Depth: depth,
-            Score: score,
-            Flag: flag,
-        };
+
+        this.TT_Hash[index] = hash;
+        this.TT_Depth[index] = depth;
+        this.TT_Move[index] = move;
+        this.TT_Score[index] = score;
+        this.TT_Flag[index] = flag;
     }
 
     /**
@@ -1672,14 +1686,20 @@ class Khepri {
      * @returns Will return null if an entry hasn't been set at that index or if the entry's hash doesn't match the provided hash.
      * Otherwise, the entry will be returned.
      */
-    GetEntry(hash: bigint): TTEntry | null {
-        const entry = this.TranspositionTables[Number(hash % this.TTSize)];
+    GetEntry(hash: bigint): TTEntry | null {const index = Number(hash % this.TTSize);
+        const tt_hash = this.TT_Hash[index];
 
-        if (entry && entry.Hash !== hash) {
+        if (tt_hash !== hash) {
             return null;
         }
 
-        return entry;
+        return {
+            Hash: tt_hash,
+            Move: this.TT_Move[index],
+            Depth: this.TT_Depth[index],
+            Score: this.TT_Score[index],
+            Flag: this.TT_Flag[index],
+        };
     }
 
     /****************************
