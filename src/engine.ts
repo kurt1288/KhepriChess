@@ -2183,12 +2183,12 @@ class Khepri {
     }
 
     FormatScore(score: number) {
-        if (score < -this.MATE) {
-            return `mate ${(-this.INFINITY - score) / 2}`;
+        if (score < -this.MATE + this.MAXPLY) {
+            return `mate ${(-this.MATE - score) / 2}`;
         }
 
-        if (score > this.MATE) {
-            return `mate ${((this.INFINITY - score + 1) / 2)}`;
+        if (score > this.MATE - this.MAXPLY) {
+            return `mate ${((this.MATE - score + 1) / 2)}`;
         }
 
         return `cp ${score | 0}`;
@@ -2326,7 +2326,7 @@ class Khepri {
             staticEval = this.Evaluate();
 
             // Static null move pruning (reverse futility pruning)
-            if (depth <= 5 && staticEval - 60 * depth >= beta && Math.abs(staticEval) < (this.INFINITY - this.BoardState.Ply)) {
+            if (depth <= 5 && staticEval - 60 * depth >= beta && Math.abs(staticEval) < (this.MATE - this.BoardState.Ply)) {
                 return staticEval;
             }
 
@@ -2342,7 +2342,7 @@ class Khepri {
                 this.UnmakeNullMove();
 
                 if (score >= beta) {
-                    if (Math.abs(score) > (this.INFINITY - this.BoardState.Ply)) {
+                    if (Math.abs(score) > (this.MATE - this.BoardState.Ply)) {
                         return beta;
                     }
                     return score;
@@ -2351,8 +2351,8 @@ class Khepri {
         }
 
         // Mate distance pruning
-        alpha = Math.max(-this.INFINITY + this.BoardState.Ply, alpha);
-        beta = Math.min(this.INFINITY - this.BoardState.Ply, beta);
+        alpha = Math.max(-this.MATE + this.BoardState.Ply, alpha);
+        beta = Math.min(this.MATE - this.BoardState.Ply, beta);
 
         if (alpha >= beta) {
             return alpha;
@@ -2462,7 +2462,7 @@ class Khepri {
         // If there are no legal moves, it's either checkmate or stalemate
         if (legalMoves === 0) {
             if (inCheck) {
-                return -this.INFINITY + this.BoardState.Ply;
+                return -this.MATE + this.BoardState.Ply;
             }
             else {
                 return 0;
