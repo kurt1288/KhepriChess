@@ -313,11 +313,7 @@ class Khepri {
         this.BoardState.CastlingSquaresMask = new Array(64).fill(15);
 
         this.ResizeTranspositionTable(32);
-        this.TTSize = BigInt((32 * 1024 * 1024) / 16);
-        this.TTUsed = 0;
-
-        this.PawnTable = Array((4 * 1024 * 1024) / 16).fill(null);
-        this.PawnTableSize = BigInt((4 * 1024 * 1024) / 16);
+        this.ResizePawnTable(4);
 
         this.nodesSearched = 0;
         this.pvArray = Array(this.MAXPLY).fill(0).map(() => Array(this.MAXPLY).fill(0));
@@ -1686,7 +1682,8 @@ class Khepri {
      * @returns Will return null if an entry hasn't been set at that index or if the entry's hash doesn't match the provided hash.
      * Otherwise, the entry will be returned.
      */
-    GetEntry(hash: bigint): TTEntry | null {const index = Number(hash % this.TTSize);
+    GetEntry(hash: bigint): TTEntry | null {
+        const index = Number(hash % this.TTSize);
         const tt_hash = this.TT_Hash[index];
 
         if (tt_hash !== hash) {
@@ -1708,28 +1705,46 @@ class Khepri {
      *
      ****************************/
 
-    PawnTable: PawnEntry[] = Array((4 * 1024 * 1024) / 16).fill(null); // 4 MB table size
-    PawnTableSize = BigInt((4 * 1024 * 1024) / 16);
+    private PawnTableSize = (4 * 1024 * 1024) / 16;  // 4 MB table size
+    private PawnTableSize_Index = BigInt(this.PawnTableSize);
 
-    StorePawnHash(hash: bigint, mg: number, eg: number, side: Color) {
-        const index = Number(hash % this.PawnTableSize);
-        
-        this.PawnTable[index] = {
-            Hash: hash,
-            Mg: mg,
-            Eg: eg,
-            SideToMove: side,
-        }
+    private PawnTable_Hash = new BigUint64Array(this.PawnTableSize);
+    private PawnTable_MGScore = new Int16Array(this.PawnTableSize);
+    private PawnTable_EGScore = new Int16Array(this.PawnTableSize);
+    private PawnTable_STM = new Uint8Array(this.PawnTableSize);
+
+    ResizePawnTable(size: number) {
+        this.PawnTableSize = (size * 1024 * 1024) / 16;
+        this.PawnTableSize_Index = BigInt(this.PawnTableSize);
+        this.PawnTable_Hash = new BigUint64Array(this.PawnTableSize);
+        this.PawnTable_MGScore = new Int16Array(this.PawnTableSize);
+        this.PawnTable_EGScore = new Int16Array(this.PawnTableSize);
+        this.PawnTable_STM = new Uint8Array(this.PawnTableSize);
     }
 
-    GetPawnEntry(hash: bigint): PawnEntry | false {
-        const entry = this.PawnTable[Number(hash % this.PawnTableSize)];
+    StorePawnHash(hash: bigint, mg: number, eg: number, side: Color) {
+        const index = Number(hash % this.PawnTableSize_Index);
 
-        if (entry && entry.Hash !== hash) {
-            return false;
+        this.PawnTable_Hash[index] = hash;
+        this.PawnTable_MGScore[index] = mg;
+        this.PawnTable_EGScore[index] = eg;
+        this.PawnTable_STM[index] = side;
+    }
+
+    GetPawnEntry(hash: bigint): PawnEntry | null {
+        const index = Number(hash % this.PawnTableSize_Index);
+        const pt_hash = this.PawnTable_Hash[index];
+
+        if (pt_hash !== hash) {
+            return null;
         }
 
-        return entry;
+        return {
+            Hash: pt_hash,
+            Mg: this.PawnTable_MGScore[index],
+            Eg: this.PawnTable_EGScore[index],
+            SideToMove: this.PawnTable_STM[index],
+        }
     }
 
     /****************************
