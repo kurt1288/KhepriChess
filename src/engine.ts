@@ -2223,7 +2223,7 @@ class Khepri {
         }
 
         if (score > this.MATE - this.MAXPLY) {
-            return `mate ${((this.MATE - score + 1) / 2)}`;
+            return `mate ${(Math.round((this.MATE - score + 1) / 2))}`;
         }
 
         return `cp ${score | 0}`;
