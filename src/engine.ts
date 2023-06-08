@@ -2736,7 +2736,7 @@ class Khepri {
             this.BoardState.CastlingSquaresMask[kingSquare] = side === Color.White ? 12 : 3;
 
             if (castle.toUpperCase() === "K") {
-                const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i > kingSquare);
+                const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i > kingSquare && (i >> 3 === kingSquare >> 3));
 
                 if (side === Color.White) {
                     this.BoardState.CastlingRights |= CastlingRights.WhiteKingside;
@@ -2752,7 +2752,7 @@ class Khepri {
                 }
             }
             else if (castle.toUpperCase() === "Q") {
-                const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i < kingSquare);
+                const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i < kingSquare && (i >> 3 === kingSquare >> 3));
 
                 if (side === Color.White) {
                     this.BoardState.CastlingRights |= CastlingRights.WhiteQueenside;
@@ -2771,7 +2771,7 @@ class Khepri {
             else if (castle.toUpperCase() >= "A" && castle.toUpperCase() <= "H") {
                 // Kingside castle
                 if (castle.toUpperCase().charCodeAt(0) - 65 > (kingSquare & 7)) {
-                    const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i > kingSquare);
+                    const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i > kingSquare && (i >> 3 === kingSquare >> 3));
 
                     if (side === Color.White) {
                         this.BoardState.CastlingRights |= CastlingRights.WhiteKingside;
@@ -2789,7 +2789,7 @@ class Khepri {
                 // Queenside castle
                 else {
                     if (side === Color.White) {
-                        const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i >= 56 && i < kingSquare);
+                        const rookSquare = this.BoardState.Squares.findIndex((x, i) => x && x.Type === PieceType.Rook && x.Color === side && i >= 56 && i < kingSquare && (i >> 3 === kingSquare >> 3));
                         this.BoardState.CastlingRights |= CastlingRights.WhiteQueenside;
                         this.BoardState.CastlingPaths[CastlingRights.WhiteQueenside] = (this.betweenMasks[kingSquare][Square.c1] | this.betweenMasks[rookSquare][Square.d1] | this.squareBB[Square.c1] | this.squareBB[Square.d1]) & ~(this.BoardState.PiecesBB[PieceType.King + (side * 6)] | this.SetBit(0n, rookSquare));
                         this.BoardState.CastlingRookSquares[CastlingRights.WhiteQueenside] = rookSquare;
