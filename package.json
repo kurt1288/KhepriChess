@@ -1,6 +1,6 @@
 {
   "name": "kheprichess",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "license": "gplv3",
   "scripts": {
     "start": "webpack serve --config-name devConfig",
