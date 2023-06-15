@@ -2527,6 +2527,7 @@ class Khepri {
         const isPVNode = beta - alpha > 1;
         let hashFlag = HashFlag.Alpha;
         let ttMove = 0;
+        let staticEval = -this.INFINITY;
         const entry = this.GetEntry(this.BoardState.Hash);
 
         if (!isPVNode && entry && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
@@ -2536,9 +2537,12 @@ class Khepri {
         // Even if the entry doesn't contain a valid score to return, we can still use the move for move ordering
         if (entry) {
             ttMove = entry.Move;
+            staticEval = entry.Score;
         }
 
-        const staticEval = this.Evaluate();
+        if (staticEval === -this.INFINITY) {
+            staticEval = this.Evaluate();
+        }
 
         if (staticEval >= beta) {
             return staticEval;
