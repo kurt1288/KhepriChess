@@ -2527,45 +2527,47 @@ class Khepri {
         const isPVNode = beta - alpha > 1;
         let hashFlag = HashFlag.Alpha;
         let ttMove = 0;
-        let staticEval = -this.INFINITY;
+        let bestScore = -this.INFINITY;
         const entry = this.GetEntry(this.BoardState.Hash);
 
-        if (!isPVNode && entry && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
-            return entry.Score;
-        }
-
-        // Even if the entry doesn't contain a valid score to return, we can still use the move for move ordering
         if (entry) {
             ttMove = entry.Move;
-            staticEval = entry.Score;
+            bestScore = entry.Score;
+
+            if (!isPVNode && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
+                return entry.Score;
+            }
         }
 
-        if (staticEval === -this.INFINITY) {
-            staticEval = this.Evaluate();
+        if (bestScore === -this.INFINITY) {
+            bestScore = this.Evaluate();
         }
 
-        if (staticEval >= beta) {
-            return staticEval;
+        // stand pat
+        if (bestScore >= beta) {
+            return bestScore;
         }
 
-        if (staticEval > alpha) {
-            alpha = staticEval;
+        if (bestScore > alpha) {
+            alpha = bestScore;
         }
 
-        let bestScore = staticEval;
+        let futilityValue = bestScore + 150;
         let bestMove = 0;
         const moves = this.ScoreMoves(this.GenerateMoves(true), ttMove, previousMove);
 
         for (let i = 0; i < moves.length; i++) {
             const move = this.NextMove(moves, i).move;
 
+            const see = this.See(move);
+
             // delta pruning
-            if (staticEval + 150 + this.MGPieceValue[PieceType.Queen] < alpha) {
+            if (futilityValue + see < alpha) {
                 continue;
             }
 
             // skip bad captures (captures that end up losing material)
-            if (this.See(move) < 0) {
+            if (see < 0) {
                 continue;
             }
 
