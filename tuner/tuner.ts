@@ -472,73 +472,6 @@ export default class Tuner {
     }
 }
 
-class Quiescer {
-    Engine: Khepri = new Khepri();
-    Result: string = "";
-
-    QuiescePosition(position: string) {
-        this.Result = "";
-        this.Engine.Reset();
-        this.Engine.LoadFEN(position);
-        const pv: number[] = [];
-        this.Quiesce(-60000, 60000, pv);
-
-        // Quiet the position
-        for (let move of pv) {
-            this.Engine.MakeMove(move);
-        }
-
-        this.Result = this.Engine.GenerateFEN();
-    }
-
-    Quiesce(alpha: number, beta: number, pv: number[]) {
-        const staticEval = this.Engine.Evaluate();
-
-        if (staticEval >= beta) {
-            return beta;
-        }
-
-        if (staticEval > alpha) {
-            alpha = staticEval;
-        }
-
-        let bestScore = staticEval;
-        const moves = this.Engine.ScoreMoves(this.Engine.GenerateMoves(true), 0, 0);
-        const newPv: number[] = [];
-
-        for (let i = 0; i < moves.length; i++) {
-            const move = this.Engine.NextMove(moves, i).move;
-
-            if (!this.Engine.MakeMove(move)) {
-                this.Engine.UnmakeMove(move);
-                continue;
-            }
-
-            let score = -this.Quiesce(-beta, -alpha, newPv);
-            this.Engine.UnmakeMove(move);
-
-            if (score > bestScore) {
-                bestScore = score;
-            }
-
-            if (score >= beta) {
-                break;
-            }
-
-            if (score > alpha) {
-                alpha = score;
-                pv.length = 0;
-                pv.push(move);
-                pv.push(...newPv);
-            }
-
-            newPv.length = 0;
-        }
-
-        return bestScore;
-    }
-}
-
 class Game {
     private Engine = new Khepri();
     Result: string | null = null;
@@ -559,8 +492,16 @@ class Game {
     Reset() {
         this.Positions.length = 0;
         this.Result = null;
-        this.Engine.Reset();
+        // this.Engine.Reset();
         this.Engine.LoadFEN(Khepri.positions.start);
+    }
+
+    LoadFEN(fen: string) {
+        this.Engine.LoadFEN(fen);
+    }
+
+    IsChess960(value: boolean) {
+        this.Engine.isChess960 = value; 
     }
 
     CoordsToSquare(coords: string) {
@@ -770,16 +711,75 @@ class Game {
         this.Engine.MakeMove(move);
         this.Positions.push(this.Engine.GenerateFEN());
     }
+
+    QuiescePosition(position: string) {
+        // this.Engine.Reset();
+        this.Engine.LoadFEN(position);
+        const pv: number[] = [];
+        this.Quiesce(-60000, 60000, pv);
+
+        // Quiet the position
+        for (let move of pv) {
+            this.Engine.MakeMove(move);
+        }
+
+        return this.Engine.GenerateFEN();
+    }
+
+    Quiesce(alpha: number, beta: number, pv: number[]) {
+        const staticEval = this.Engine.Evaluate();
+
+        if (staticEval >= beta) {
+            return beta;
+        }
+
+        if (staticEval > alpha) {
+            alpha = staticEval;
+        }
+
+        let bestScore = staticEval;
+        const moves = this.Engine.ScoreMoves(this.Engine.GenerateMoves(true), 0, 0);
+        const newPv: number[] = [];
+
+        for (let i = 0; i < moves.length; i++) {
+            const move = this.Engine.NextMove(moves, i).move;
+
+            if (!this.Engine.MakeMove(move)) {
+                this.Engine.UnmakeMove(move);
+                continue;
+            }
+
+            let score = -this.Quiesce(-beta, -alpha, newPv);
+            this.Engine.UnmakeMove(move);
+
+            if (score > bestScore) {
+                bestScore = score;
+            }
+
+            if (score >= beta) {
+                break;
+            }
+
+            if (score > alpha) {
+                alpha = score;
+                pv.length = 0;
+                pv.push(move);
+                pv.push(...newPv);
+            }
+
+            newPv.length = 0;
+        }
+
+        return bestScore;
+    }
 }
 
 class PGNParser {
     private readonly NumPositionsPerGame = 5;
     private readonly MinGameLength = 15;
     private SourceFile!: readline.Interface;
-    private ResultFile = fs.createWriteStream(path.join(__dirname, "positions.txt"), 'utf-8');
+    private ResultFile = fs.createWriteStream(path.join(__dirname, "extracted_positions.txt"), 'utf-8');
     private Positions: Set<string> = new Set();
-
-    private Quiescer = new Quiescer();
     private Game = new Game();
     private FileSize = 0;
 
@@ -796,17 +796,11 @@ class PGNParser {
         await this.GetPositions();
         console.log("Finished parsing PGN file");
 
-        // for (let position of this.Positions) {
-        //     this.ResultFile.write(position);
-        // }
-
         this.ResultFile.close();
         readStream.close();
     }
 
     ParseGame(positions: string[], result: string) {
-        // this.Quiescer.Engine.Reset();
-
         // Skip games that don't have enough positions
         if (positions.length <= this.MinGameLength) {
             // console.log(`Skipped game. Has ${positions.length} positions (min ${this.MinGameLength}).`);
@@ -842,16 +836,17 @@ class PGNParser {
                 continue;
             }
 
+            let position = "";
+
             try {
-                this.Quiescer.QuiescePosition(pos);
+                position = this.Game.QuiescePosition(pos);
+                this.Positions.add(position);
+                this.ResultFile.write(`${position} c9 "${result}";\n`);
             }
             catch {
                 console.log(`Error quiescing position ${pos}`);
                 continue;
             }
-
-            this.Positions.add(`${this.Quiescer.Result} c9 "${result}";\n`);
-            this.ResultFile.write(`${this.Quiescer.Result} c9 "${result}";\n`);
 
             i++;
         }
@@ -953,6 +948,20 @@ class PGNParser {
 
                 if (result === "illegal move" || result === "unterminated") {
                     skipGame = true;
+                }
+            }
+            else if (line.startsWith("[FEN ")) {
+                const stop = line.indexOf("]");
+                let fen = line.substring(6, stop - 1);
+
+                this.Game.LoadFEN(fen);
+            }
+            else if (line.startsWith("[Variant ")) {
+                const stop = line.indexOf("]");
+                let variant = line.substring(10, stop - 1);
+
+                if (variant === "fischerandom") {
+                    this.Game.IsChess960(true);
                 }
             }
             else if (!line.startsWith("[") && !skipGame) {
