@@ -772,6 +772,10 @@ class Game {
 
         return bestScore;
     }
+
+    get eval() {
+        return this.Engine.Evaluate();
+    }
 }
 
 class PGNParser {
@@ -816,17 +820,20 @@ class PGNParser {
         let attempts = 0;
         let previousRandoms: number[] = [];
 
+        positions:
         while (i < this.NumPositionsPerGame && attempts < 20) {
-            // random position (no position within the first 5 moves)
-            const rand = Math.floor(Math.random() * ((positions.length - 1) - 3 + 1) + 3);
+            // const rand = Math.floor(Math.random() * ((positions.length - 1) - 3 + 1) + 3);
+            const rand = Math.floor(Math.random() * (positions.length - 1 - 0 + 1) + 0);
 
             // Don't use a position that's within 6 plys of another position (within the same game)
             for (let random of previousRandoms) {
-                if (rand >= random - 6 && rand <= random + 6) {
+                if (Math.abs(rand - random) <= 6) {
                     attempts++;
-                    continue;
+                    continue positions;
                 }
             }
+
+            previousRandoms.push(rand);
 
             const pos = positions[rand];
 
@@ -840,6 +847,14 @@ class PGNParser {
 
             try {
                 position = this.Game.QuiescePosition(pos);
+
+                const evaluation = this.Game.eval;
+
+                // if the result of the played game was a draw, but the engine eval isn't close to even, consider the game result incorrect and skip
+                if (result === "1/2-1/2" && (evaluation > 75 || evaluation < -75)) {
+                    continue;
+                }
+
                 this.Positions.add(position);
                 this.ResultFile.write(`${position} c9 "${result}";\n`);
             }
