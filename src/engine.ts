@@ -2338,19 +2338,20 @@ class Khepri {
         let legalMoves = 0;
         let quietMoves = [];
         let score = -this.INFINITY;
+        let staticEval = -this.INFINITY;
 
         const entry = this.GetEntry(this.BoardState.Hash);
 
-        if (!isPVNode && entry && entry.Depth >= depth && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
-            return entry.Score;
-        }
-
-        // Even if the entry doesn't contain a valid score to return, we can still use the move for move ordering
         if (entry) {
+            // Even we don't return the score here, we can still use the move for move ordering and score for eval
             ttMove = entry.Move;
+            staticEval = entry.Score;
+
+            if (!isPVNode && entry.Depth >= depth && (entry.Flag === HashFlag.Exact || (entry.Flag === HashFlag.Beta && entry.Score >= beta) || (entry.Flag === HashFlag.Alpha && entry.Score <= alpha))) {
+                return entry.Score;
+            }
         }
 
-        let staticEval = -this.INFINITY;
         const inCheck = this.IsSquareAttacked(this.GetLS1B(this.BoardState.PiecesBB[PieceType.King + (6 * this.BoardState.SideToMove)]), this.BoardState.SideToMove ^ 1);
 
         if (ttMove === 0 && depth >= 3) {
@@ -2358,7 +2359,9 @@ class Khepri {
         }
 
         if (!inCheck && !isPVNode) {
-            staticEval = this.Evaluate();
+            if (staticEval === -this.INFINITY) {
+                staticEval = this.Evaluate();
+            }
 
             // Static null move pruning (reverse futility pruning)
             if (depth <= 5 && staticEval - 60 * depth >= beta && Math.abs(staticEval) < (this.MATE - this.BoardState.Ply)) {
