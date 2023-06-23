@@ -1904,6 +1904,7 @@ class Khepri {
         ]
     ];
 
+    readonly SeePieceValue = [100, 300, 325, 500, 1000, 15000];
     readonly MGPieceValue = [71, 274, 285, 362, 983, 15000];
     readonly EGPieceValue = [140, 324, 362, 618, 1033, 15000];
     readonly MGKnightOutpost = 7;
@@ -2562,15 +2563,15 @@ class Khepri {
         for (let i = 0; i < moves.length; i++) {
             const move = this.NextMove(moves, i).move;
 
-            const see = this.See(move);
+            // const see = this.See(move);
 
             // delta pruning
-            if (futilityValue + see < alpha) {
+            if (futilityValue + this.SeePieceValue[PieceType.Queen] < alpha) {
                 continue;
             }
 
             // skip bad captures (captures that end up losing material)
-            if (see < 0) {
+            if (!this.See(move, 0)) {
                 continue;
             }
 
@@ -2603,72 +2604,100 @@ class Khepri {
         return bestScore;
     }
 
-    See(move: number) {
+    /**
+     * Plays out all captures for the given move (if there are any)
+     * @param move The initial move to play
+     * @param threshold The exchange value to beat
+     * @returns true if the resulting material exchange is at least the threshold value, otherwise false
+     */
+    See(move: number, threshold: number) {
         const from = this.MoveFrom(move);
         const to = this.MoveTo(move);
         const movingPiece = this.BoardState.Squares[from];
-        let capturedPiece = this.BoardState.Squares[to]?.Type;
+        const isEP = this.MoveType(move) === MoveType.EPCapture;
+        let capturedPiece = isEP ? this.BoardState.Squares[this.BoardState.EnPassSq]?.Type : this.BoardState.Squares[to]?.Type;
         let sideToMove = this.BoardState.SideToMove ^ 1;
-        const occupancies = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
 
+        // guard, this shouldn't happen
         if (movingPiece === undefined || capturedPiece === undefined) {
-            // this shouldn't happen
             return 0;
         }
 
-        const knights = this.BoardState.PiecesBB[PieceType.Knight] | this.BoardState.PiecesBB[PieceType.Knight + 6];
-        const bishops = this.BoardState.PiecesBB[PieceType.Bishop] | this.BoardState.PiecesBB[PieceType.Bishop + 6];
-        const rooks = this.BoardState.PiecesBB[PieceType.Rook] | this.BoardState.PiecesBB[PieceType.Rook + 6];
-        const queens = this.BoardState.PiecesBB[PieceType.Queen] | this.BoardState.PiecesBB[PieceType.Queen + 6];
-        const bishopQueens = bishops | queens;
-        const rookQueens = rooks | queens;
-        const maxXray = this.BoardState.PiecesBB[PieceType.Pawn] | this.BoardState.PiecesBB[PieceType.Pawn + 6] | bishops | rooks | queens;
+        let score = this.SeePieceValue[capturedPiece] - threshold;
 
-        const gain = [];
-        let depth = 0;
-        let attackerBB = this.squareBB[from];
-        let attdef = this.AttacksTo(to, occupancies, knights, bishopQueens, rookQueens);
-        let movedBB = 0n;
+        if (this.HasFlag(move, MoveFlag.Promotion)) {
+            score = this.SeePieceValue[PieceType.Queen] - this.SeePieceValue[PieceType.Pawn];
+        }
+        else if (isEP) {
+            score = this.SeePieceValue[PieceType.Pawn];
+        }
 
-        gain[depth] = this.MGPieceValue[capturedPiece];
+        if (score < 0) {
+            return false;
+        }
 
-        while (attackerBB) {
-            depth++;
+        let nextVictim = this.HasFlag(move, MoveFlag.Promotion) ? PieceType.Queen : movingPiece.Type;
 
-            gain[depth] = this.MGPieceValue[movingPiece.Type] - gain[depth - 1];
+        score -= this.SeePieceValue[nextVictim];
 
-            if (Math.max(-gain[depth - 1], gain[depth]) < 0) {
+        if (score >= 0) {
+            return true;
+        }
+
+        const bishopQueens = this.BoardState.PiecesBB[PieceType.Bishop] | this.BoardState.PiecesBB[PieceType.Bishop + 6] | this.BoardState.PiecesBB[PieceType.Queen] | this.BoardState.PiecesBB[PieceType.Queen + 6];
+        const rookQueens = this.BoardState.PiecesBB[PieceType.Rook] | this.BoardState.PiecesBB[PieceType.Rook + 6] | this.BoardState.PiecesBB[PieceType.Queen] | this.BoardState.PiecesBB[PieceType.Queen + 6];
+        let occupancies = this.BoardState.OccupanciesBB[Color.White] | this.BoardState.OccupanciesBB[Color.Black];
+        occupancies = (occupancies ^ this.squareBB[from]) | this.squareBB[to];
+
+        if (isEP) {
+            occupancies ^= this.squareBB[this.BoardState.EnPassSq];
+        }
+
+        let attackers = this.AttacksTo(to, occupancies) & occupancies;
+
+        while (true) {
+            attackers &= occupancies;
+
+            let { bitboard, piece } = this.GetLeastValuablePiece(attackers, sideToMove, capturedPiece);
+
+            if (!bitboard) {
                 break;
             }
 
-            attdef ^= attackerBB;
-            movedBB |= attackerBB;
+            score = -score - 1 - this.SeePieceValue[piece];
+            sideToMove ^= 1;
 
-            if (attackerBB & maxXray) {
-                attdef |= ((bishopQueens & this.GenerateBishopAttacks(occupancies, to)) | (rookQueens & this.GenerateRookAttacks(occupancies, to))) & ~movedBB;
+            if (score >= 0) {
+                if (piece === PieceType.King && (bitboard & this.BoardState.OccupanciesBB[sideToMove])) {
+                    sideToMove ^= 1;
+                }
+                
+                break;
             }
 
-            const { bitboard, piece } = this.GetLeastValuablePiece(attdef, sideToMove, capturedPiece);
-            attackerBB = bitboard;
-            capturedPiece = piece;
-            sideToMove ^= 1;
+            occupancies ^= bitboard;
+
+            if (piece === PieceType.Rook || piece === PieceType.Queen) {
+                attackers |= this.GenerateRookAttacks(occupancies, to) & rookQueens & occupancies;
+            }
+            else if (piece === PieceType.Pawn || piece === PieceType.Bishop || piece === PieceType.Queen) {
+                attackers |= this.GenerateBishopAttacks(occupancies, to) & bishopQueens & occupancies;
+            }
         }
 
-        while (--depth) {
-            gain[depth - 1] = -Math.max(-gain[depth - 1], gain[depth]);
-        }
-
-        return gain[0];
+        return sideToMove !== movingPiece.Color;
     }
 
-    AttacksTo(square: Square, occupancy: bigint, knights: bigint, bishopQueens: bigint, rookQueens: bigint) {
+    AttacksTo(square: Square, occupancy: bigint) {
         const pawns = (this.BoardState.PiecesBB[PieceType.Pawn] & this.PawnAttacks[square + 64]) | ((this.BoardState.PiecesBB[PieceType.Pawn + 6] & this.PawnAttacks[square]));
         const kings = (this.BoardState.PiecesBB[PieceType.King] | this.BoardState.PiecesBB[PieceType.King + 6]) & this.KingAttacks[square];
+        const knights = this.KnightAttacks[square] & (this.BoardState.PiecesBB[PieceType.Knight] | this.BoardState.PiecesBB[PieceType.Knight + 6]);
+        const bishopQueens = this.GenerateBishopAttacks(occupancy, square)
+            & (this.BoardState.PiecesBB[PieceType.Bishop] | this.BoardState.PiecesBB[PieceType.Bishop + 6] | this.BoardState.PiecesBB[PieceType.Queen] | this.BoardState.PiecesBB[PieceType.Queen + 6]);
+        const rookQueens = this.GenerateRookAttacks(occupancy, square)
+            & (this.BoardState.PiecesBB[PieceType.Rook] | this.BoardState.PiecesBB[PieceType.Rook + 6] | this.BoardState.PiecesBB[PieceType.Queen] | this.BoardState.PiecesBB[PieceType.Queen + 6]);
 
-        bishopQueens &= this.GenerateBishopAttacks(occupancy, square);
-        rookQueens &= this.GenerateRookAttacks(occupancy, square);
-
-        return pawns | (knights & this.KnightAttacks[square]) | kings | bishopQueens | rookQueens;
+        return pawns | knights | kings | bishopQueens | rookQueens;
     }
 
     GetLeastValuablePiece(board: bigint, side: Color, piece: PieceType) {
