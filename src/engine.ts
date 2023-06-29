@@ -1913,8 +1913,10 @@ class Khepri {
     readonly MGRookSemiOpenFileBonus = 23;
     readonly MGBishopPair = 7;
     readonly EGBishopPair = 58;
-    readonly PawnDuoMulti = [0, -10, 9, 39, 93, 50, 36];
-    readonly PawnSupportMulti = [0, 0, 21, 18, 25, 46, 42];
+    readonly MGPawnDuoMulti = [0, 0, 6, 11, 28, 2, 1];
+    readonly EGPawnDuoMulti = [0, -11, 6, 27, 43, 8, 5];
+    readonly MGPawnSupportMulti = [0, 0, 11, 9, 10, 24, 3];
+    readonly EGPawnSupportMulti = [0, 0, 13, 10, 14, 23, 5];
     readonly MGDoubledPawn = 12;
     readonly EGDoubledPawn = 21;
     readonly MGIsolatedPawn = 13;
@@ -2111,14 +2113,14 @@ class Khepri {
 
             // pawn duos (pawns with a neighboring pawn)
             if (this.Shift(this.squareBB[actualSquare], Direction.EAST) & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) {
-                //mg[piece.Color] += 3 * this.PawnRankMulti[rank - 1]; // [0, 1, 1.25, 2, 5, 8, 15, 0]
-                eg[piece.Color] += this.PawnDuoMulti[rank - 1]; // [0, 10, 14, 25, 80, 150, 250, 0]
+                mg[piece.Color] += this.MGPawnDuoMulti[rank - 1];
+                eg[piece.Color] += this.EGPawnDuoMulti[rank - 1];
             }
 
             // defending pawn(s)?
             if (this.PawnAttacks[actualSquare + (64 * (piece.Color ^ 1))] & this.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) {
-                //mg[piece.Color] += 2 * this.PawnRankMulti[rank - 1]; // [0, 1, 1.25, 2, 5, 8, 15, 0]
-                eg[piece.Color] += this.PawnSupportMulti[rank - 1]; // [0, 0, 25, 40, 75, 100, 225, 0]
+                mg[piece.Color] += this.MGPawnSupportMulti[rank - 1];
+                eg[piece.Color] += this.EGPawnSupportMulti[rank - 1];
             }
 
             // doubled pawn

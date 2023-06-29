@@ -12,7 +12,9 @@ interface Indexes {
     EG_KnightOutpost_StartIndex: number
     MG_RookOpenFileBonus_StartIndex: number;
     MG_RookSemiOpenFileBonus_StartIndex: number;
+    MG_PawnDuoMulti_StartIndex: number;
     EG_PawnDuoMulti_StartIndex: number;
+    MG_PawnSupportMulti_StartIndex: number;
     EG_PawnSupportMulti_StartIndex: number;
     MG_DoubledPawn_StartIndex: number;
     EG_DoubledPawn_StartIndex: number;
@@ -144,7 +146,9 @@ export default class Tuner {
         console.log(`EG Knight Outpost Score: ${weights.slice(indexes.EG_KnightOutpost_StartIndex, indexes.EG_KnightOutpost_StartIndex + 1).map(x => Math.round(x))}`);
         console.log(`Rook File Semi-Open Score: ${weights.slice(indexes.MG_RookSemiOpenFileBonus_StartIndex, indexes.MG_RookSemiOpenFileBonus_StartIndex + 1).map(x => Math.round(x))}`);
         console.log(`Rook File Open Score: ${weights.slice(indexes.MG_RookOpenFileBonus_StartIndex, indexes.MG_RookOpenFileBonus_StartIndex + 1).map(x => Math.round(x))}`);
+        console.log(`MG Pawn Duo Multi: ${weights.slice(indexes.MG_PawnDuoMulti_StartIndex, indexes.MG_PawnDuoMulti_StartIndex + 7).map(x => Math.round(x))}`);
         console.log(`EG Pawn Duo Multi: ${weights.slice(indexes.EG_PawnDuoMulti_StartIndex, indexes.EG_PawnDuoMulti_StartIndex + 7).map(x => Math.round(x))}`);
+        console.log(`MG Pawn Support Multi: ${weights.slice(indexes.MG_PawnSupportMulti_StartIndex, indexes.MG_PawnSupportMulti_StartIndex + 7).map(x => Math.round(x))}`);
         console.log(`EG Pawn Support Multi: ${weights.slice(indexes.EG_PawnSupportMulti_StartIndex, indexes.EG_PawnSupportMulti_StartIndex + 7).map(x => Math.round(x))}`);
         console.log(`MG Doubled Pawn: ${weights.slice(indexes.MG_DoubledPawn_StartIndex, indexes.MG_DoubledPawn_StartIndex + 1).map(x => Math.round(x))}`);
         console.log(`EG Doubled Pawn: ${weights.slice(indexes.EG_DoubledPawn_StartIndex, indexes.EG_DoubledPawn_StartIndex + 1).map(x => Math.round(x))}`);
@@ -211,7 +215,9 @@ export default class Tuner {
             EG_KnightOutpost_StartIndex: 0,
             MG_RookOpenFileBonus_StartIndex: 0,
             MG_RookSemiOpenFileBonus_StartIndex: 0,
+            MG_PawnDuoMulti_StartIndex: 0,
             EG_PawnDuoMulti_StartIndex: 0,
+            MG_PawnSupportMulti_StartIndex: 0,
             EG_PawnSupportMulti_StartIndex: 0,
             MG_DoubledPawn_StartIndex: 0,
             EG_DoubledPawn_StartIndex: 0,
@@ -255,11 +261,17 @@ export default class Tuner {
 
         index += 4;
 
-        indexes.EG_PawnDuoMulti_StartIndex = index;
-        weights.splice(indexes.EG_PawnDuoMulti_StartIndex, 0, ...this.Engine.PawnDuoMulti);
+        indexes.MG_PawnDuoMulti_StartIndex = weights.length;
+        weights.splice(indexes.MG_PawnDuoMulti_StartIndex, 0, ...this.Engine.MGPawnDuoMulti);
 
-        indexes.EG_PawnSupportMulti_StartIndex = index + 7;
-        weights.splice(indexes.EG_PawnSupportMulti_StartIndex, 0, ...this.Engine.PawnSupportMulti);
+        indexes.EG_PawnDuoMulti_StartIndex = weights.length;
+        weights.splice(indexes.EG_PawnDuoMulti_StartIndex, 0, ...this.Engine.EGPawnDuoMulti);
+
+        indexes.MG_PawnSupportMulti_StartIndex = weights.length;
+        weights.splice(indexes.MG_PawnSupportMulti_StartIndex, 0, ...this.Engine.MGPawnSupportMulti);
+
+        indexes.EG_PawnSupportMulti_StartIndex = weights.length;
+        weights.splice(indexes.EG_PawnSupportMulti_StartIndex, 0, ...this.Engine.EGPawnSupportMulti);
 
         indexes.MG_DoubledPawn_StartIndex = weights.length;
         weights.splice(indexes.MG_DoubledPawn_StartIndex, 0, this.Engine.MGDoubledPawn);
@@ -380,15 +392,13 @@ export default class Tuner {
                 case PieceType.Pawn: {
                     // pawn duos (pawns with a neighboring pawn)
                     if (this.Engine.Shift(this.Engine.squareBB[actualSquare], Direction.EAST) & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) {
-                        // mg[piece.Color] += 3 * this.PawnRankMulti[rank - 1]; // [0, 1, 1.25, 2, 5, 8, 15, 0]
-                        // eg[piece.Color] += this.Engine.PawnDuoMulti[rank - 1]; // [0, 10, 14, 25, 80, 150, 250, 0]
+                        rawNormals[indexes.MG_PawnDuoMulti_StartIndex + (rank - 1)] += sign * mgPhase;
                         rawNormals[indexes.EG_PawnDuoMulti_StartIndex + (rank - 1)] += sign * egPhase;
                     }
 
                     // defending pawn(s)?
                     if (this.Engine.PawnAttacks[actualSquare + (64 * (piece.Color ^ 1))] & this.Engine.BoardState.PiecesBB[PieceType.Pawn + (6 * piece.Color)]) {
-                        // mg[piece.Color] += 2 * this.PawnRankMulti[rank - 1]; // [0, 1, 1.25, 2, 5, 8, 15, 0]
-                        // eg[piece.Color] += this.Engine.PawnSupportMulti[rank - 1]; // [0, 0, 25, 40, 75, 100, 225, 0]
+                        rawNormals[indexes.MG_PawnSupportMulti_StartIndex + (rank - 1)] += sign * mgPhase;
                         rawNormals[indexes.EG_PawnSupportMulti_StartIndex + (rank - 1)] += sign * egPhase;
                     }
 
