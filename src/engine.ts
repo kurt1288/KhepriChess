@@ -2426,7 +2426,7 @@ class Khepri {
             let E = inCheck ? 1 : 0;
 
             // Late move reductions
-            if (depth >= 3 && i > 4) {
+            if (depth >= 3 && legalMoves > 4) {
                 let R = 1 / (4 / depth) | 0;
 
                 if (!this.IsCapture(move) && !this.IsPromotion(move)) {
@@ -2448,7 +2448,7 @@ class Khepri {
             // normal search, if not doing LMR or if LMR did not fail low
             score = -this.NegaScout(-b, -alpha, depth - 1 + E, move, true);
 
-            if (score > alpha && score < beta && i > 1) {
+            if (score > alpha && score < beta && legalMoves > 1) {
                 score = -this.NegaScout(-beta, -alpha, depth - 1 + E, move, true); /* re-search with wider window */
             }
 
